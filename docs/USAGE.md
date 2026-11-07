@@ -6,7 +6,7 @@ Zefir connects to servers you configure. You need a subscription URL, a server l
 
 ## Choose a build
 
-There are no published GitHub releases yet. Use the [build guide](BUILDING.md) to create a local build. When releases are available, choose from the assets actually attached to that version:
+Pre-built packages are available in [Releases](https://github.com/YouRooni/Zefir/releases). You can also follow the [build guide](BUILDING.md) to create a local build. Choose from the assets attached to each version:
 
 | Package suffix | Intended device |
 | --- | --- |

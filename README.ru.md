@@ -4,7 +4,7 @@
 
 <h1 align="center">Zefir</h1>
 
-<p align="center">VPN-клиент для Android, Windows и Linux.<br>Ядро mihomo · Интерфейс Material 3 Expressive</p>
+<p align="center">Чистый и выразительный VPN-клиент.<br>Быстрый, приватный и современный.</p>
 
 <p align="center">
   <a href="README.md">English</a> · Русский · <a href="README.zh-CN.md">简体中文</a>
@@ -29,7 +29,7 @@
 
 ## Начало работы
 
-Zefir находится в бете. Сборки в GitHub Releases пока не опубликованы; сейчас приложение можно [собрать из исходников](docs/BUILDING.md).
+Zefir находится в бете. Готовые сборки доступны в [Releases](https://github.com/YouRooni/Zefir/releases), либо приложение можно [собрать из исходников](docs/BUILDING.md).
 
 | Платформа | Требования |
 | --- | --- |

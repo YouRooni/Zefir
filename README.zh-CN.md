@@ -4,7 +4,7 @@
 
 <h1 align="center">Zefir</h1>
 
-<p align="center">适用于 Android、Windows 和 Linux 的 VPN 客户端。<br>mihomo 网络内核 · Material 3 Expressive 界面</p>
+<p align="center">简洁、美观的 VPN 客户端。<br>快速、私密、现代。</p>
 
 <p align="center">
   <a href="README.md">English</a> · <a href="README.ru.md">Русский</a> · 简体中文
@@ -29,7 +29,7 @@
 
 ## 开始使用
 
-Zefir 目前处于测试阶段，尚未在 GitHub Releases 发布安装包。现阶段请[从源码构建](docs/BUILDING.md)。
+Zefir 目前处于测试阶段。可在 [Releases](https://github.com/YouRooni/Zefir/releases) 下载预构建安装包，也可以[从源码构建](docs/BUILDING.md)。
 
 | 平台 | 要求 |
 | --- | --- |
