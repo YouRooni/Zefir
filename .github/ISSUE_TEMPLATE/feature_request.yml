@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a specific improvement. English or Russian is welcome.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed behavior
+      description: Describe how the change would help. Screenshots or examples are welcome.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android and Windows
+        - Android
+        - Windows

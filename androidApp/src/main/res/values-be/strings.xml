@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zefir</string>
+    <string name="tunnel_channel">Стан VPN</string>
+    <string name="tunnel_channel_quiet">Стан VPN (схаванае)</string>
+    <string name="tunnel_on">VPN уключаны</string>
+    <string name="tunnel_connecting">Падключаемся…</string>
+    <string name="tunnel_disconnect">Адключыць</string>
+    <string name="reminder_channel">Напаміны пра падпіску</string>
+    <string name="reminder_title">Падпіска хутка скончыцца</string>
+    <string name="reminder_days">«%1$s»: засталося дзён: %2$d</string>
+    <string name="reminder_traffic">«%1$s»: выдаткавана больш за 90%% трафіку</string>
+    <string name="watch_channel">Аўтаправілы</string>
+    <string name="watch_title">Сочым за сеткай і экранам</string>
+    <string name="tunnel_pause">Паўза</string>
+    <string name="tunnel_resume">Працягнуць</string>
+    <string name="tunnel_paused">VPN на паўзе</string>
+    <string name="widget_connect">Падключыць</string>
+    <string name="widget_on">Падключана</string>
+    <string name="widget_off">Адключана</string>
+    <string name="widget_desc">Уключэнне VPN і бягучы сервер</string>
+    <string name="widget_no_profile">Дадайце падпіску</string>
+    <string name="widget_days">засталося дзён: %1$d</string>
+</resources>

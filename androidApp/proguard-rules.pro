@@ -1,0 +1,11 @@
+-keep class go.** { *; }
+-keep class dev.rooni.vpncore.** { *; }
+-dontwarn org.slf4j.**
+-dontwarn java.beans.**
+-keep class org.yaml.snakeyaml.** { *; }
+-dontobfuscate
+-keepattributes SourceFile,LineNumberTable,*Annotation*,Signature,InnerClasses,EnclosingMethod
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.** { *; }
+-keep class com.google.firebase.** { *; }
+-dontwarn com.google.**

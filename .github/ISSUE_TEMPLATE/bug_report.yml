@@ -1,0 +1,57 @@
+name: Bug report
+description: Something does not work as expected. English or Russian is welcome.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check existing issues first. Remove subscription URLs, QR codes, tokens and credentials from attachments.
+        For vulnerabilities, use [private security reporting](https://github.com/YouRooni/Zefir/security/policy).
+  - type: input
+    id: version
+    attributes:
+      label: Zefir version
+      description: Copy the version from About. For a local build, include the commit if known.
+      placeholder: 1.x.x-beta
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and device
+      placeholder: Android 16, OnePlus 13 / Windows 11 x64
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Connection mode
+      options:
+        - Android VPN
+        - Windows TUN
+        - Windows system proxy
+        - Not related to a connection / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Start from the app state needed to reproduce the problem.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: What should happen, and what happens instead?
+    validations:
+      required: true
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Logs, screenshots or sample configuration
+      description: Optional. Use a minimal example with placeholders and review attachments for secrets.

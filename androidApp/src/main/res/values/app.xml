@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="launcher_bg">#FF1A3D35</color>
+    <string name="app_name">Zefir</string>
+    <string name="tunnel_channel">Состояние VPN</string>
+    <string name="tunnel_channel_quiet">Состояние VPN (скрытое)</string>
+    <string name="tunnel_on">VPN включён</string>
+    <string name="tunnel_connecting">Подключаемся</string>
+    <string name="tunnel_disconnect">Отключить</string>
+    <string name="reminder_channel">Напоминания о подписке</string>
+    <string name="reminder_title">Подписка скоро закончится</string>
+    <string name="reminder_days">«%1$s»: осталось дней: %2$d</string>
+    <string name="reminder_traffic">«%1$s»: израсходовано больше 90%% трафика</string>
+    <string name="watch_channel">Автоправила</string>
+    <string name="watch_title">Следим за сетью и экраном</string>
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+    <string name="tunnel_pause">Пауза</string>
+    <string name="tunnel_resume">Продолжить</string>
+    <string name="tunnel_paused">VPN на паузе</string>
+    <string name="widget_connect">Подключить</string>
+    <string name="widget_on">Подключено</string>
+    <string name="widget_off">Отключено</string>
+    <string name="widget_desc">Включение VPN и текущий сервер</string>
+    <string name="widget_no_profile">Добавьте подписку</string>
+    <string name="widget_days">осталось дней: %1$d</string>
+</resources>

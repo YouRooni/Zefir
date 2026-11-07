@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zefir</string>
+    <string name="tunnel_channel">VPN 运行状态</string>
+    <string name="tunnel_channel_quiet">VPN 状态（静音通知）</string>
+    <string name="tunnel_on">VPN 已连接</string>
+    <string name="tunnel_connecting">正在连接…</string>
+    <string name="tunnel_disconnect">断开连接</string>
+    <string name="reminder_channel">订阅提醒</string>
+    <string name="reminder_title">订阅即将到期</string>
+    <string name="reminder_days">“%1$s”：剩余 %2$d 天</string>
+    <string name="reminder_traffic">“%1$s”：已消耗超 90%% 流量</string>
+    <string name="watch_channel">自动化监控</string>
+    <string name="watch_title">正在监听网络和屏幕状态</string>
+    <string name="tunnel_pause">暂停</string>
+    <string name="tunnel_resume">继续</string>
+    <string name="tunnel_paused">VPN 已暂停</string>
+    <string name="widget_connect">连接</string>
+    <string name="widget_on">已连接</string>
+    <string name="widget_off">未连接</string>
+    <string name="widget_desc">VPN 开关和当前服务器</string>
+    <string name="widget_no_profile">请添加订阅</string>
+    <string name="widget_days">剩余 %1$d 天</string>
+</resources>

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Zefir</string>
+    <string name="tunnel_channel">VPN Status</string>
+    <string name="tunnel_channel_quiet">VPN Status (silent)</string>
+    <string name="tunnel_on">VPN is connected</string>
+    <string name="tunnel_connecting">Connecting…</string>
+    <string name="tunnel_disconnect">Disconnect</string>
+    <string name="reminder_channel">Subscription reminders</string>
+    <string name="reminder_title">Subscription expiring soon</string>
+    <string name="reminder_days">“%1$s”: %2$d days remaining</string>
+    <string name="reminder_traffic">“%1$s”: over 90%% traffic used</string>
+    <string name="watch_channel">Network automation</string>
+    <string name="watch_title">Monitoring network and screen</string>
+    <string name="tunnel_pause">Pause</string>
+    <string name="tunnel_resume">Resume</string>
+    <string name="tunnel_paused">VPN paused</string>
+    <string name="widget_connect">Connect</string>
+    <string name="widget_on">Connected</string>
+    <string name="widget_off">Disconnected</string>
+    <string name="widget_desc">VPN toggle and current server</string>
+    <string name="widget_no_profile">Add a subscription</string>
+    <string name="widget_days">%1$d days left</string>
+</resources>

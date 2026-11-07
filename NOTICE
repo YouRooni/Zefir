@@ -1,0 +1,51 @@
+Zefir
+Copyright (C) 2026 Rooni and contributors
+SPDX-License-Identifier: GPL-3.0-only
+
+Zefir's original code and artwork are distributed under GNU GPL version 3.
+Third-party components retain their copyright and license terms.
+
+FlClash core wrapper
+Source: https://github.com/chen08209/FlClash
+Revision: 7fd417fb9a9a277c6a9339a8ac87f907df7c25f7
+License: GNU GPL v3 (see LICENSE and licenses/FlClash-LICENSE)
+The Go wrapper is used to build the Android bridge and the desktop core process.
+Change by Rooni, 2026-11-01: core/dial_pipe.go also accepts a loopback TCP
+port for IPC on Windows. The replacement is in scripts/core-patches/.
+Change by Rooni, 2026-11-02: mihomo component/tls/reality.go reports client
+version 26.10.31 instead of 1.8.2 in the REALITY handshake, so servers with
+minClientVer accept it. Applied by scripts/core-patches/reality-version.sh.
+The Kotlin UI and application logic are developed separately in this project.
+
+mihomo
+Upstream: https://github.com/MetaCubeX/mihomo
+Build source: https://github.com/chen08209/Clash.Meta
+Revision: c5062921054902b25215a6a933e72ccd714c9bfa
+License: GNU GPL v3 (see licenses/mihomo-LICENSE)
+The revision is pinned by the FlClash submodule. core-revisions.txt in release
+sources records the exact revisions used by the build.
+
+Routing databases
+Source: https://github.com/MetaCubeX/meta-rules-dat
+Revision: 766969db0401dc72fe698a0a03080e538e1be0cb
+Files: geoip.metadb (packaged as GEOIP.metadb), geosite.dat (as GEOSITE.dat)
+Project license: GNU GPL v3 (see licenses/meta-rules-dat-LICENSE)
+The upstream project documents the datasets and rule lists used to generate
+these files. Download revisions and SHA-256 hashes are in scripts/core.env.
+
+Country flags
+Source: https://flagcdn.com / https://flagpedia.net/download/icons
+The provider distributes these images as public domain, based on Wikimedia
+Commons flag artwork. Packaged in shared/src/commonMain/composeResources/files/flags/.
+
+Libraries
+Kotlin, Compose Multiplatform, AndroidX, kotlinx.coroutines,
+kotlinx.serialization, Ktor, MaterialKolor, Qr Rose, SnakeYAML and JNA are
+resolved by Gradle; versions are declared in gradle/libs.versions.toml.
+Their license and attribution files remain in the dependency artifacts.
+Google ML Kit and Google Play services components are subject to Google's
+SDK terms; they are dependencies, not code licensed by Zefir under GPL.
+The bundled Java runtime in desktop packages retains its own legal notices.
+
+Release source archives contain Zefir and the patched FlClash/mihomo sources.
+See docs/BUILDING.md for build instructions and upstream source locations.

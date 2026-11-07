@@ -1,0 +1,254 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]*.[0-9]*.[0-9]*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.metadata.outputs.version }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - name: Check tag, version and notes
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/release-metadata.py "$RELEASE_TAG"
+      - name: Check signing setup
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for key in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "::error::Missing repository secret: $key"
+              exit 1
+            fi
+          done
+
+  core:
+    name: Build mihomo core
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      ROOT: ${{ github.workspace }}/tmp/core-build
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install Android NDK
+        run: |
+          source scripts/core.env
+          sdkmanager "ndk;$NDK_VERSION"
+      - name: Build and stage native libraries
+        run: |
+          bash scripts/build-core.sh
+          bash scripts/prepare-core.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-core
+          path: core/prebuilt/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: core-source
+          path: tmp/core-build/out/core-source.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  android:
+    name: Build Android
+    needs: [validate, core]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: native-core
+          path: core/prebuilt
+      - name: Install Android SDK
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Prepare signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: python3 scripts/prepare-signing.py
+      - name: Build signed APKs
+        run: >-
+          bash gradlew :androidApp:assembleRelease --no-daemon --console=plain --max-workers=2
+          -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC"
+          -Pkotlin.compiler.execution.strategy=in-process
+      - name: Check APKs and collect assets
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir -p dist
+          for pair in arm64-v8a:arm64 armeabi-v7a:armv7 x86_64:x86_64; do
+            abi=${pair%%:*}
+            name=${pair##*:}
+            apk="androidApp/build/outputs/apk/release/androidApp-$abi-release.apk"
+            "$ANDROID_HOME/build-tools/37.0.0/apksigner" verify "$apk"
+            unzip -l "$apk" "lib/$abi/libgojni.so" | grep -q libgojni.so
+            unzip -p "$apk" assets/NOTICE | grep -F Zefir >/dev/null
+            unzip -p "$apk" assets/LICENSE | grep -F 'GNU GENERAL PUBLIC LICENSE' >/dev/null
+            cp "$apk" "dist/Zefir-$RELEASE_VERSION-android-$name.apk"
+          done
+      - name: Remove signing key
+        if: always()
+        run: rm -f release.jks keystore.properties
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-android
+          path: dist/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    name: Test and build Windows
+    needs: [validate, core]
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: native-core
+          path: core/prebuilt
+      - name: Install Android SDK for shared module
+        shell: bash
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Test and package
+        shell: pwsh
+        run: |
+          ./gradlew.bat :shared:desktopTest :desktopApp:packagePortable --no-daemon --console=plain --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC' '-Pkotlin.compiler.execution.strategy=in-process'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $core = 'desktopApp/build/compose/binaries/main/app/Zefir/app/resources/vpncore-windows-amd64.exe'
+          if (!(Test-Path -LiteralPath $core)) { throw 'Native core is missing from the Windows package.' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-windows
+          path: desktopApp/build/compose/binaries/main/portable/*.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: test-results
+          path: shared/build/reports/tests/desktopTest/
+          retention-days: 7
+
+  linux:
+    name: Build Linux
+    needs: [validate, core]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: native-core
+          path: core/prebuilt
+      - name: Install Android SDK for shared module
+        run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
+      - name: Package
+        run: |
+          bash gradlew :desktopApp:packageLinux --no-daemon --console=plain --max-workers=2             -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC"             -Pkotlin.compiler.execution.strategy=in-process
+          archive=$(ls desktopApp/build/compose/binaries/main/linux/*.tar.gz)
+          tar -tzf "$archive" | grep -q 'Zefir/lib/app/resources/vpncore-linux-amd64'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-linux
+          path: desktopApp/build/compose/binaries/main/linux/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish release
+    needs: [validate, android, windows, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0
+        with:
+          name: core-source
+          path: tmp/core-source
+      - name: Bundle sources and notices
+        run: |
+          mkdir -p tmp/source
+          git archive HEAD | tar -x -C tmp/source
+          mkdir -p tmp/source/third-party
+          tar -xzf tmp/core-source/core-source.tar.gz -C tmp/source/third-party
+          tar -czf "dist/Zefir-$RELEASE_VERSION-source.tar.gz" -C tmp/source .
+          cp LICENSE NOTICE dist/
+          (cd dist && sha256sum *.apk *.zip *.tar.gz LICENSE NOTICE > SHA256SUMS.txt)
+      - name: Publish complete release
+        run: |
+          args=(--verify-tag --title "Zefir $RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_VERSION.md")
+          if [ "$PRERELEASE" = true ]; then args+=(--prerelease --latest=false); fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo '::error::Release already exists. Do not replace published binaries; use a new version.'
+            exit 1
+          fi
+          gh release create "$RELEASE_TAG" --draft "${args[@]}"
+          gh release upload "$RELEASE_TAG" dist/*.apk dist/*.zip dist/*.tar.gz dist/LICENSE dist/NOTICE dist/SHA256SUMS.txt
+          gh release edit "$RELEASE_TAG" --draft=false
