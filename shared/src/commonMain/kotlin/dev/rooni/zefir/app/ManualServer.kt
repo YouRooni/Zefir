@@ -21,13 +21,17 @@ enum class ManualType(val label: String, val key: String) {
     Hysteria2("Hysteria2", "hysteria2"),
     Tuic("TUIC", "tuic"),
     WireGuard("WireGuard", "wireguard"),
-    Amnezia("AmneziaWG", "wireguard");
+    Amnezia("AmneziaWG", "wireguard"),
+    AnyTls("AnyTLS", "anytls"),
+    Mieru("Mieru", "mieru"),
+    Ssh("SSH", "ssh");
 
     val isWireGuard: Boolean get() = this == WireGuard || this == Amnezia
 
     val usesUuid: Boolean get() = this == Vless || this == Vmess || this == Tuic
-    val usesLogin: Boolean get() = this == Socks || this == Http
-    val needsPassword: Boolean get() = this == Shadowsocks || this == Trojan || this == Hysteria2 || this == Tuic
+    val usesLogin: Boolean get() = this == Socks || this == Http || this == Mieru || this == Ssh
+    val needsUser: Boolean get() = this == Mieru || this == Ssh
+    val needsPassword: Boolean get() = this == Shadowsocks || this == Trojan || this == Hysteria2 || this == Tuic || this == AnyTls || this == Mieru || this == Ssh
     val hasPassword: Boolean get() = usesLogin || needsPassword
     val hasTransport: Boolean get() = this == Vless || this == Vmess || this == Trojan
 
@@ -36,14 +40,16 @@ enum class ManualType(val label: String, val key: String) {
             Socks, Http, Vmess -> listOf(ManualSecurity.None, ManualSecurity.Tls)
             Vless -> ManualSecurity.entries
             Trojan -> listOf(ManualSecurity.Tls, ManualSecurity.Reality)
-            Hysteria2, Tuic -> listOf(ManualSecurity.Tls)
-            Shadowsocks, WireGuard, Amnezia -> emptyList()
+            Hysteria2, Tuic, AnyTls -> listOf(ManualSecurity.Tls)
+            Shadowsocks, WireGuard, Amnezia, Mieru, Ssh -> emptyList()
         }
 }
 
 enum class ManualSecurity { None, Tls, Reality }
 
-enum class ManualTransport(val key: String, val label: String) { Tcp("tcp", "TCP"), Ws("ws", "WebSocket"), Grpc("grpc", "gRPC"), H2("h2", "HTTP/2") }
+enum class ManualTransport(val key: String, val label: String) { Tcp("tcp", "TCP"), Ws("ws", "WebSocket"), Grpc("grpc", "gRPC"), H2("h2", "HTTP/2"), Xhttp("xhttp", "XHTTP") }
+
+fun ManualType.transports(): List<ManualTransport> = ManualTransport.entries.filter { it != ManualTransport.Xhttp || this == ManualType.Vless }
 
 val SS_CIPHERS = listOf(
     "2022-blake3-aes-128-gcm",
@@ -108,6 +114,7 @@ data class ManualServer(
         get() = when {
             cleanHost.isEmpty() || cleanHost.any { it.isWhitespace() || it == '/' } -> ManualField.Host
             portNumber == null -> ManualField.Port
+            type.needsUser && user.isBlank() -> ManualField.User
             type.usesUuid && uuid.isBlank() -> ManualField.Uuid
             type.needsPassword && password.isEmpty() -> ManualField.Password
             type.isWireGuard && (privateKey.isBlank() || peerKey.isBlank()) -> ManualField.Keys
@@ -126,7 +133,7 @@ data class ManualServer(
             put("type", type.key)
             put("server", cleanHost)
             put("port", portNumber ?: 0)
-            if (type != ManualType.Http) put("udp", true)
+            if (type != ManualType.Http && type != ManualType.Ssh) put("udp", true)
             if (type.usesLogin && user.isNotEmpty()) put("username", user)
             if (type.hasPassword && password.isNotEmpty()) put("password", password)
             if (type.usesUuid) put("uuid", uuid.trim())
@@ -140,6 +147,10 @@ data class ManualServer(
                 ManualType.Hysteria2 -> if (obfsPassword.isNotEmpty()) {
                     put("obfs", "salamander")
                     put("obfs-password", obfsPassword)
+                }
+                ManualType.Mieru -> {
+                    put("transport", "TCP")
+                    put("multiplexing", "MULTIPLEXING_LOW")
                 }
                 ManualType.Tuic -> {
                     put("congestion-controller", "bbr")
@@ -162,7 +173,7 @@ data class ManualServer(
                 val sniKey = if (type == ManualType.Vless || type == ManualType.Vmess) "servername" else "sni"
                 if (sni.isNotBlank()) put(sniKey, sni.trim())
                 if (insecure) put("skip-cert-verify", true)
-                if (type.hasTransport) put("client-fingerprint", fingerprint)
+                if (type.hasTransport || type == ManualType.AnyTls) put("client-fingerprint", fingerprint)
                 if (showsReality) putJsonObject("reality-opts") {
                     put("public-key", realityKey.trim())
                     if (shortId.isNotBlank()) put("short-id", shortId.trim())
@@ -180,6 +191,10 @@ data class ManualServer(
                         put("path", path.ifBlank { "/" })
                         if (hostHeader.isNotBlank()) putJsonArray("host") { add(JsonPrimitive(hostHeader.trim())) }
                     }
+                    ManualTransport.Xhttp -> putJsonObject("xhttp-opts") {
+                        put("path", path.ifBlank { "/" })
+                        if (hostHeader.isNotBlank()) put("host", hostHeader.trim())
+                    }
                     ManualTransport.Tcp -> Unit
                 }
             }
@@ -193,7 +208,7 @@ data class ManualServer(
             "name", "type", "server", "port", "udp", "username", "password", "uuid", "cipher", "alterId", "flow",
             "obfs", "obfs-password", "private-key", "public-key", "pre-shared-key", "ip", "ipv6", "tls", "servername", "sni",
             "skip-cert-verify", "client-fingerprint", "reality-opts", "network", "ws-opts", "grpc-opts", "h2-opts",
-            "amnezia-wg-option",
+            "amnezia-wg-option", "xhttp-opts", "transport", "multiplexing",
         )
 
         private fun amneziaTitle(key: String) = amneziaConfKey(key)
@@ -212,11 +227,12 @@ data class ManualServer(
             val reality = child(proxy, "reality-opts")
             val tls = when {
                 reality != null -> ManualSecurity.Reality
-                type == ManualType.Trojan || type == ManualType.Hysteria2 || type == ManualType.Tuic || flag(proxy, "tls") -> ManualSecurity.Tls
+                type == ManualType.Trojan || type == ManualType.Hysteria2 || type == ManualType.Tuic || type == ManualType.AnyTls || flag(proxy, "tls") -> ManualSecurity.Tls
                 else -> ManualSecurity.None
             }
             val ws = child(proxy, "ws-opts")
             val h2 = child(proxy, "h2-opts")
+            val xhttp = child(proxy, "xhttp-opts")
             val address = listOf(text(proxy, "ip"), text(proxy, "ipv6")).filter { it.isNotEmpty() }.joinToString(", ")
             return ManualServer(
                 type = type,
@@ -235,8 +251,8 @@ data class ManualServer(
                 realityKey = text(reality, "public-key"),
                 shortId = text(reality, "short-id"),
                 transport = network,
-                path = text(ws, "path").ifEmpty { text(h2, "path") },
-                hostHeader = text(child(ws, "headers"), "Host").ifEmpty { ((h2?.get("host") as? JsonArray)?.firstOrNull() as? JsonElement)?.jsonPrimitive?.contentOrNull.orEmpty() },
+                path = text(ws, "path").ifEmpty { text(h2, "path") }.ifEmpty { text(xhttp, "path") },
+                hostHeader = text(xhttp, "host").ifEmpty { text(child(ws, "headers"), "Host") }.ifEmpty { (h2?.get("host") as? JsonArray)?.firstOrNull()?.jsonPrimitive?.contentOrNull.orEmpty() },
                 service = text(child(proxy, "grpc-opts"), "grpc-service-name"),
                 obfsPassword = text(proxy, "obfs-password"),
                 privateKey = text(proxy, "private-key"),
@@ -250,4 +266,4 @@ data class ManualServer(
     }
 }
 
-enum class ManualField { Host, Port, Password, Uuid, Keys, Address, RealityKey, Amnezia }
+enum class ManualField { Host, Port, User, Password, Uuid, Keys, Address, RealityKey, Amnezia }

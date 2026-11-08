@@ -299,6 +299,7 @@ fun ImportError.label(): StringResource = when (this) {
     ImportError.Unsupported -> Res.string.add_err_unsupported
     ImportError.NoServers -> Res.string.add_err_no_servers
     ImportError.Blocked -> Res.string.add_err_blocked
+    ImportError.TooLarge -> Res.string.add_err_too_large
 }
 
 @Composable

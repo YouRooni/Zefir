@@ -87,10 +87,17 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
     private val _refreshCooldown = MutableStateFlow<Set<String>>(emptySet())
     val refreshCooldown: StateFlow<Set<String>> = _refreshCooldown
 
+    val automation by lazy { Automation(this) }
+
+    fun setAutomation(on: Boolean) = update({ it.copy(automation = on, automationKey = it.automationKey.ifEmpty { Automation.newKey() }) })
+
+    fun newAutomationKey() = update({ it.copy(automationKey = Automation.newKey()) })
+
     fun deviceHeaders(): Map<String, String> {
         val s = _settings.value
         if (!s.sendDevice) return emptyMap()
         val own = platform.deviceHeaders
+        if (dev.rooni.zefir.ui.PLAY_BUILD) return own
         return own + buildMap {
             s.deviceHwid.trim().ifEmpty { null }?.let { put("x-hwid", it) }
             s.deviceModel.trim().ifEmpty { null }?.let { put("x-device-model", it) }
@@ -105,6 +112,22 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
     val region: RegionPack? get() = _settings.value.effectiveRegion(detectedCountry)
 
     init {
+        _settings.value.let { s ->
+            if (s.widgetsVersion < 1) {
+                val list = s.widgets.toMutableList()
+                val at = list.indexOf(HomeWidget.Traffic)
+                if (at >= 0 && HomeWidget.Session !in list) list.add(at, HomeWidget.Session)
+                _settings.value = s.copy(widgets = list, widgetsVersion = 1)
+                persistSettings()
+            }
+        }
+        // автоправила из бекапа другой сборки там, где их нет (десктоп, Zefir X)
+        if (!platform.hasWifiRules && _settings.value.autoRules) {
+            _settings.value = _settings.value.copy(autoRules = false)
+            persistSettings()
+        }
+        dev.rooni.zefir.ui.AppMotion.off = _settings.value.noAnimations
+        scope.launch { _settings.collect { dev.rooni.zefir.ui.AppMotion.off = it.noAnimations } }
         scope.launch(Dispatchers.Default) {
             runCatching {
                 platform.copyGeoData()
@@ -168,7 +191,6 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
         scope.launch { settings.map { it.haptics }.distinctUntilChanged().collect(platform::setHaptics) }
         scope.launch { settings.map { it.desktopTun }.distinctUntilChanged().collect(platform::applyDesktopSettings) }
         scope.launch { platform.idleEvents.collect(::onIdleEvent) }
-        scope.launch(diskDispatcher) { runCatching { Fs.delete("${platform.dataDir}/assistant_chat.json") } }
         scope.launch {
             _ready.first { it }
             syncWatching()
@@ -532,7 +554,8 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
     suspend fun exportBackup(): Boolean {
         val backup = buildJsonObject {
             put("version", 1)
-            put("settings", json.encodeToJsonElement(AppSettings.serializer(), _settings.value))
+            // ключ автоматизации в файл не кладём
+            put("settings", json.encodeToJsonElement(AppSettings.serializer(), _settings.value.copy(automation = false, automationKey = "")))
             put("profiles", json.encodeToJsonElement(ListSerializer(Profile.serializer()), _profiles.value))
             putJsonObject("files") {
                 _profiles.value.forEach { put(it.id, readConfig(it.id)) }
@@ -557,7 +580,8 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
             }
             _profiles.value = profiles
             persistProfiles()
-            _settings.value = settings.copy(onboarded = true)
+            val own = _settings.value
+            _settings.value = settings.copy(onboarded = true, automation = own.automation, automationKey = own.automationKey)
             persistSettings()
             syncWatching()
             reloadAndRestart()
@@ -708,9 +732,30 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
         }
     }
 
+    // если тыкать подписки подряд, перезапуск один, на последнюю выбранную
+    private val switchRequests = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    private val switchWorker by lazy {
+        scope.launch(Dispatchers.Default) {
+            for (request in switchRequests) {
+                if (tunnel.value != TunnelState.Off && tunnel.value !is TunnelState.Failed) delay(SWITCH_SETTLE)
+                switchRequests.tryReceive()
+                reloadAndRestart()
+            }
+        }
+    }
+
+    fun reorderProfiles(ids: List<String>) {
+        _profiles.update { list ->
+            val byId = list.associateBy { it.id }
+            ids.mapNotNull { byId[it] } + list.filter { it.id !in ids }
+        }
+        persistProfiles()
+    }
+
     fun activate(id: String) {
         update({ it.copy(activeProfile = id) })
-        scope.launch(Dispatchers.Default) { reloadAndRestart() }
+        switchWorker
+        switchRequests.trySend(Unit)
     }
 
     suspend fun setProfileClient(id: String, client: String, custom: String?): ImportError? = withContext(Dispatchers.Default) {
@@ -1178,7 +1223,7 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
         var rules = routing
         var error = apply(rules)
         while (error != null) {
-            val broken = rules.firstOrNull { "[$it]" in error!! } ?: break
+            val broken = rules.firstOrNull { "[$it]" in error } ?: break
             addLog(LogLine("warning", "subscription rule skipped: $broken"))
             rules = rules - broken
             error = apply(rules)
@@ -1279,6 +1324,7 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
         private const val REFRESH_COOLDOWN = 3000L
         private const val AUTO_SETTLE = 2000L
         private const val RESTART_TIMEOUT = 15_000L
+        private const val SWITCH_SETTLE = 600L
         private const val HAND_WINDOW = 20_000L
         private const val AUTO_SWITCH_EVERY = 60_000L
         private const val IDLE_TRAFFIC = 32 * 1024L

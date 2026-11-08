@@ -24,10 +24,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.FrameWindowScope
-import androidx.compose.ui.window.Tray
-import androidx.compose.ui.window.Window
+import com.kdroid.composetray.tray.api.Tray as SniTray
+import androidx.compose.ui.awt.SwingWindow
 import androidx.compose.ui.window.application
-import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.graphics.toAwtImage
 import dev.rooni.zefir.app.AppController
 import dev.rooni.zefir.model.TunnelState
 import dev.rooni.zefir.platform.DesktopPlatform
@@ -46,12 +46,80 @@ import java.awt.event.WindowEvent
 import java.io.File
 import kotlin.system.exitProcess
 
+private val isLinux = System.getProperty("os.name").startsWith("Linux")
+
+private fun linuxWindowClass() {
+    runCatching {
+        val toolkit = java.awt.Toolkit.getDefaultToolkit()
+        val field = toolkit.javaClass.getDeclaredField("awtAppClassName")
+        field.isAccessible = true
+        field.set(toolkit, "zefir")
+    }
+}
+
+private fun linuxTrayHost(): Boolean = runCatching {
+    val process = ProcessBuilder(
+        "gdbus", "call", "--session", "--timeout", "2",
+        "--dest", "org.freedesktop.DBus", "--object-path", "/org/freedesktop/DBus",
+        "--method", "org.freedesktop.DBus.NameHasOwner", "org.kde.StatusNotifierWatcher",
+    ).redirectErrorStream(true).start()
+    val out = process.inputStream.bufferedReader().readText()
+    process.waitFor()
+    "true" in out
+}.getOrDefault(true)
+
+private fun trayIconFiles(painter: Painter, density: androidx.compose.ui.unit.Density, tag: String): Pair<String, String> {
+    val dir = File(System.getProperty("java.io.tmpdir"), "zefir-tray").apply { mkdirs() }
+    fun png(size: Int): ByteArray {
+        val image = painter.toAwtImage(density, androidx.compose.ui.unit.LayoutDirection.Ltr, androidx.compose.ui.geometry.Size(size.toFloat(), size.toFloat()))
+        val buffer = java.awt.image.BufferedImage(size, size, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        buffer.createGraphics().apply {
+            drawImage(image, 0, 0, size, size, null)
+            dispose()
+        }
+        return java.io.ByteArrayOutputStream().also { javax.imageio.ImageIO.write(buffer, "png", it) }.toByteArray()
+    }
+    val pngFile = File(dir, "tray-$tag.png")
+    if (!pngFile.exists()) pngFile.writeBytes(png(64))
+    val icoFile = File(dir, "tray-$tag.ico")
+    if (!icoFile.exists()) {
+        val sizes = listOf(16, 20, 24, 32, 48, 64)
+        val images = sizes.map(::png)
+        val header = java.nio.ByteBuffer.allocate(6 + 16 * sizes.size).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        header.putShort(0).putShort(1).putShort(sizes.size.toShort())
+        var offset = 6 + 16 * sizes.size
+        sizes.zip(images).forEach { (size, data) ->
+            header.put(size.toByte()).put(size.toByte()).put(0).put(0).putShort(1).putShort(32).putInt(data.size).putInt(offset)
+            offset += data.size
+        }
+        icoFile.outputStream().use { out ->
+            out.write(header.array())
+            images.forEach(out::write)
+        }
+    }
+    return pngFile.toURI().toString() to icoFile.toURI().toString()
+}
+
+private fun linuxHome(): File {
+    val user = System.getProperty("user.home")
+    val base = System.getenv("XDG_DATA_HOME")?.takeIf { it.startsWith("/") } ?: "$user/.local/share"
+    val target = File(base, "zefir")
+    val legacy = File(user, ".zefir")
+    if (legacy.isDirectory && !target.exists()) {
+        target.parentFile?.mkdirs()
+        if (!legacy.renameTo(target) && runCatching { legacy.copyRecursively(target) }.getOrDefault(false)) legacy.deleteRecursively()
+    }
+    return target
+}
+
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 fun main(args: Array<String>) {
+    if (isLinux) linuxWindowClass()
     val coreDir = File(System.getProperty("compose.application.resources.dir") ?: "core/prebuilt")
 
     val appRoot = coreDir.absoluteFile.parentFile?.parentFile
     val portableHome = appRoot?.takeIf { File(it, "portable").exists() }?.let { File(it, "data").path }
-    val home = File(System.getProperty("zefir.home") ?: portableHome ?: "${System.getProperty("user.home")}/.zefir").apply { mkdirs() }
+    val home = (System.getProperty("zefir.home")?.let(::File) ?: portableHome?.let(::File) ?: if (isLinux) linuxHome() else File("${System.getProperty("user.home")}/.zefir")).apply { mkdirs() }
 
     val wake = MutableSharedFlow<String>(extraBufferCapacity = 8)
     if (!SingleInstance.acquire(home, args) { wake.tryEmit(it) }) exitProcess(0)
@@ -64,14 +132,22 @@ fun main(args: Array<String>) {
 
     scope.launch(Dispatchers.IO) { Res.allStringResources.values.forEach { runCatching { getString(it) } } }
 
-    val customFrame = controller.settings.value.customTitleBar && System.getProperty("os.name").startsWith("Windows") && System.getProperty("zefir.nativeframe") == null
+    val isWindows = System.getProperty("os.name").startsWith("Windows")
+    val customFrame = controller.settings.value.customTitleBar && (isWindows || isLinux) && System.getProperty("zefir.nativeframe") == null
+    val linuxFrame = customFrame && isLinux
+    val linuxTray = isLinux && linuxTrayHost()
 
     application {
         val iconColor by platform.windowIcon.collectAsState()
         val settings by controller.settings.collectAsState()
         val tunnel by controller.tunnel.collectAsState()
         var visible by remember { mutableStateOf(true) }
-        val windowState = rememberWindowState(width = 1000.dp, height = 720.dp)
+        var frame by remember { mutableStateOf<androidx.compose.ui.awt.ComposeWindow?>(null) }
+        var shownIcon by remember { mutableStateOf<Color?>(null) }
+        fun restore() {
+            visible = true
+            frame?.let { it.extendedState = it.extendedState and java.awt.Frame.ICONIFIED.inv() }
+        }
 
         val icon = key(iconColor) {
             rememberVectorPainter(
@@ -89,8 +165,7 @@ fun main(args: Array<String>) {
         LaunchedEffect(Unit) {
             wake.collect { message ->
                 if (message == SingleInstance.SHOW) {
-                    visible = true
-                    windowState.isMinimized = false
+                    restore()
                 } else if ("://" in message) {
                     visible = true
                     controller.requestImport(message)
@@ -98,28 +173,61 @@ fun main(args: Array<String>) {
             }
         }
 
-        val trayOn = settings.closeToTray && androidx.compose.ui.window.isTraySupported
+        val trayOn = settings.closeToTray && (if (isLinux) linuxTray else true)
         if (trayOn) {
             val connected = tunnel == TunnelState.On || tunnel == TunnelState.Starting
-            Tray(
-                icon = icon,
-                tooltip = if (connected) "Zefir · ${stringResource(Res.string.tray_on)}" else "Zefir",
-                onAction = { visible = true; windowState.isMinimized = false },
-                menu = {
-                    Item(stringResource(Res.string.tray_open), onClick = { visible = true; windowState.isMinimized = false })
-                    Item(stringResource(if (connected) Res.string.tray_disconnect else Res.string.tray_connect), onClick = { controller.toggle() })
-                    Separator()
-                    Item(stringResource(Res.string.tray_exit), onClick = ::exitApplication)
+            val proxies by controller.proxies.collectAsState()
+            val server = proxies.resolve(proxies.main?.now)?.let { dev.rooni.zefir.ui.screens.parseServerName(it).label }
+            val status = when (tunnel) {
+                TunnelState.On -> stringResource(Res.string.home_on) + (server?.let { " · $it" } ?: "")
+                TunnelState.Starting -> stringResource(Res.string.home_starting)
+                else -> stringResource(Res.string.home_off)
+            }
+            val openLabel = stringResource(Res.string.tray_open)
+            val toggleLabel = stringResource(if (connected) Res.string.tray_disconnect else Res.string.tray_connect)
+            val exitLabel = stringResource(Res.string.tray_exit)
+            val trayDensity = LocalDensity.current
+            val files = remember(iconColor) { trayIconFiles(icon, trayDensity, iconColor.hashCode().toUInt().toString(16)) }
+            SniTray(
+                iconPath = files.first,
+                windowsIconPath = files.second,
+                tooltip = "Zefir · $status",
+                primaryAction = { restore() },
+                menuContent = {
+                    Item(status, isEnabled = false)
+                    Divider()
+                    Item(openLabel) { restore() }
+                    Item(toggleLabel) { controller.toggle() }
+                    Divider()
+                    Item(exitLabel) { exitApplication() }
                 },
             )
         }
 
-        Window(
-            onCloseRequest = { if (trayOn) visible = false else exitApplication() },
+        val close by rememberUpdatedState { if (trayOn) visible = false else exitApplication() }
+        val density = LocalDensity.current
+        SwingWindow(
             visible = visible,
-            title = "Zefir",
-            icon = icon,
-            state = windowState,
+            create = {
+                androidx.compose.ui.awt.ComposeWindow(coroutineContext = dev.rooni.zefir.ui.AppMotion).apply {
+                    title = "Zefir"
+                    isUndecorated = linuxFrame
+                    defaultCloseOperation = javax.swing.WindowConstants.DO_NOTHING_ON_CLOSE
+                    addWindowListener(object : WindowAdapter() {
+                        override fun windowClosing(e: WindowEvent) = close()
+                    })
+                    setSize(1000, 720)
+                    setLocationRelativeTo(null)
+                    frame = this
+                }
+            },
+            dispose = { it.dispose() },
+            update = { window ->
+                if (window.iconImage == null || iconColor != shownIcon) {
+                    shownIcon = iconColor
+                    window.iconImage = icon.toAwtImage(density, androidx.compose.ui.unit.LayoutDirection.Ltr, androidx.compose.ui.geometry.Size(256f, 256f))
+                }
+            },
         ) {
             var framed by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
@@ -127,7 +235,7 @@ fun main(args: Array<String>) {
                 window.addWindowFocusListener(object : WindowAdapter() {
                     override fun windowGainedFocus(e: WindowEvent) = platform.refreshAccent()
                 })
-                if (customFrame) framed = WindowsFrame.install(window.windowHandle)
+                if (customFrame) framed = if (linuxFrame) true else WindowsFrame.install(window.windowHandle)
             }
             LaunchedEffect(visible) {
                 if (visible) {
@@ -135,7 +243,15 @@ fun main(args: Array<String>) {
                     window.requestFocus()
                 }
             }
-            if (framed) {
+            if (framed && linuxFrame) {
+                Box(Modifier.fillMaxSize()) {
+                    Column(Modifier.fillMaxSize()) {
+                        LinuxTitleBar(platform, icon, onClose = { if (trayOn) visible = false else exitApplication() })
+                        Box(Modifier.weight(1f)) { App(controller) }
+                    }
+                    ResizeEdges()
+                }
+            } else if (framed) {
                 Column(Modifier.fillMaxSize()) {
                     TitleBar(platform, icon, onClose = { if (trayOn) visible = false else exitApplication() })
                     Box(Modifier.weight(1f)) { App(controller) }
@@ -163,7 +279,7 @@ private fun FrameWindowScope.TitleBar(platform: DesktopPlatform, icon: Painter, 
         }
         WindowsFrame.refreshChildren()
     }
-    Row(Modifier.fillMaxWidth().height(CaptionHeight).background(background), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().height(CaptionHeight).captionBackground(background), verticalAlignment = Alignment.CenterVertically) {
         Spacer(Modifier.width(14.dp))
         Image(icon, null, Modifier.size(16.dp))
         Spacer(Modifier.width(10.dp))

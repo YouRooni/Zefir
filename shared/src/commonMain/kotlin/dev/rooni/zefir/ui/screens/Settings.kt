@@ -1,10 +1,13 @@
 package dev.rooni.zefir.ui.screens
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -12,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -312,8 +316,11 @@ private fun DeviceFields(controller: AppController, settings: AppSettings) {
             },
         ),
     )
-    DependsOn(settings.sendDevice) { DeviceFieldRows(own, settings, saveDevice) }
-    GroupCaption(stringResource(Res.string.device_desc))
+    // в Zefir X подмены устройства нет, только вкл/выкл настоящих данных
+    if (!PLAY_BUILD) {
+        DependsOn(settings.sendDevice) { DeviceFieldRows(own, settings, saveDevice) }
+        GroupCaption(stringResource(Res.string.device_desc))
+    }
 }
 
 @Composable
@@ -339,6 +346,63 @@ private fun DeviceFieldRows(own: Map<String, String>, settings: AppSettings, sav
     )
 }
 
+// Tasker, MacroDroid, adb: ключ и описание команд (docs/AUTOMATION.md).
+// Сам переключатель живёт в «Для опытных», тут подраздел.
+@Composable
+fun AutomationScreen(controller: AppController, onBack: () -> Unit) {
+    val settings by controller.settings.collectAsState()
+    val platform = controller.platform
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    var confirmNewKey by remember { mutableStateOf(false) }
+    SubScreen(stringResource(Res.string.automation), onBack) { padding ->
+        ScrollColumn(Modifier.padding(padding)) {
+            MasterSwitch(stringResource(Res.string.automation_master), settings.automation) { on -> controller.setAutomation(on) }
+            Text(stringResource(Res.string.automation_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
+            DependsOn(settings.automation) {
+                SectionGroup(
+                    rows = listOf(
+                        { shape ->
+                            SettingRow(shape, stringResource(Res.string.automation_key), settings.automationKey.ifEmpty { "—" }, Icons.Rounded.Key, onClick = {
+                                if (settings.automationKey.isNotEmpty()) platform.writeClipboard(settings.automationKey, secret = true)
+                            }) {
+                                FilledTonalIconButton({
+                                    platform.haptic(Haptic.Tick)
+                                    confirmNewKey = true
+                                }, shapes = IconButtonDefaults.shapes()) {
+                                    Icon(Icons.Rounded.Autorenew, stringResource(Res.string.automation_new_key))
+                                }
+                            }
+                        },
+                        { shape ->
+                            NavRow(shape, stringResource(Res.string.automation_docs), stringResource(Res.string.automation_docs_desc), Icons.Rounded.Code) {
+                                uri.openUri(AUTOMATION_DOCS)
+                            }
+                        },
+                    ),
+                )
+            }
+        }
+    }
+    if (confirmNewKey) {
+        AppDialog(
+            stringResource(Res.string.automation_new_key_q),
+            stringResource(Res.string.automation_new_key_text),
+            stringResource(Res.string.cancel),
+            stringResource(Res.string.automation_new_key_action),
+            onDismiss = { confirmNewKey = false },
+            onConfirm = {
+                confirmNewKey = false
+                platform.haptic(Haptic.Toggle)
+                controller.newAutomationKey()
+            },
+            icon = Icons.Rounded.Key,
+            warning = true,
+        )
+    }
+}
+
+private const val AUTOMATION_DOCS = "https://github.com/YouRooni/Zefir/blob/main/docs/AUTOMATION.md"
+
 @Composable
 fun ToolsSettingsScreen(controller: AppController, nav: Navigator) {
     var confirmReset by remember { mutableStateOf(false) }
@@ -352,13 +416,13 @@ fun ToolsSettingsScreen(controller: AppController, nav: Navigator) {
                 rows = listOf(
                     { NavRow(it, stringResource(Res.string.speed_title), stringResource(Res.string.speed_desc), Icons.Rounded.Speed) { nav.push(Route.SpeedTest) } },
                     { NavRow(it, stringResource(Res.string.diag_title), stringResource(Res.string.diag_desc), Icons.Rounded.MedicalServices) { nav.push(Route.Diagnostics) } },
-                    { NavRow(it, stringResource(Res.string.site_title), stringResource(Res.string.site_desc), Icons.Rounded.AltRoute) { nav.push(Route.SiteCheck()) } },
+                    { NavRow(it, stringResource(Res.string.site_title), stringResource(Res.string.site_desc), Icons.AutoMirrored.Rounded.AltRoute) { nav.push(Route.SiteCheck()) } },
                 ),
             )
             SectionGroup(
                 title = stringResource(Res.string.sec_inside),
                 rows = listOf(
-                    { NavRow(it, stringResource(Res.string.logs), stringResource(Res.string.logs_desc), Icons.Rounded.Article) { nav.push(Route.Logs) } },
+                    { NavRow(it, stringResource(Res.string.logs), stringResource(Res.string.logs_desc), Icons.AutoMirrored.Rounded.Article) { nav.push(Route.Logs) } },
                     { NavRow(it, stringResource(Res.string.conn_title), stringResource(Res.string.conn_desc), Icons.Rounded.Hub) { nav.push(Route.Connections) } },
                     { NavRow(it, stringResource(Res.string.dns_title), stringResource(Res.string.dns_desc), Icons.Rounded.Dns) { nav.push(Route.DnsLog) } },
                 ),
@@ -515,6 +579,12 @@ fun AppSettingsScreen(controller: AppController, nav: Navigator) {
                             }
                         }
                     },
+                    // плавающая панель пока убрана, мб вернём
+                    // GroupRow("floatingNav") {
+                    //     SwitchRow(it, stringResource(Res.string.floating_nav), stringResource(Res.string.floating_nav_desc), settings.floatingNav, Icons.Rounded.CallToAction) { on ->
+                    //         controller.update({ s -> s.copy(floatingNav = on) })
+                    //     }
+                    // },
                     GroupRow("amoled") {
                         SwitchRow(it, stringResource(Res.string.amoled), stringResource(Res.string.amoled_desc), settings.amoled, Icons.Rounded.DarkMode, settings.theme != ThemeMode.Light) { on ->
                             controller.update({ s -> s.copy(amoled = on) })
@@ -551,6 +621,11 @@ fun AppSettingsScreen(controller: AppController, nav: Navigator) {
                 rows = buildList<@Composable (Shape) -> Unit> {
                     add { shape -> ServerLayoutCard(controller, settings, shape) }
                     add { NavRow(it, stringResource(Res.string.tile_home), stringResource(Res.string.home_row_desc), Icons.Rounded.Home) { nav.push(Route.Widgets) } }
+                    add {
+                        SwitchRow(it, stringResource(Res.string.no_animations), stringResource(Res.string.no_animations_desc), settings.noAnimations, Icons.Rounded.Animation) { on ->
+                            controller.update({ s -> s.copy(noAnimations = on) })
+                        }
+                    }
                     if (controller.platform.hasHaptics) {
                         add {
                             SwitchRow(it, stringResource(Res.string.haptics), stringResource(Res.string.haptics_desc), settings.haptics, Icons.Rounded.Vibration) { on ->
@@ -729,7 +804,7 @@ fun AdvancedSettingsScreen(controller: AppController, nav: Navigator) {
                         ) { stack -> controller.update({ it.copy(stack = stack) }, reapply = true) }
                     },
                     { SwitchRow(it, stringResource(Res.string.sniffer), stringResource(Res.string.sniffer_desc), settings.sniffer, Icons.Rounded.TravelExplore) { on -> controller.update({ s -> s.copy(sniffer = on) }, reapply = true) } },
-                    { SwitchRow(it, stringResource(Res.string.tcp_concurrent), stringResource(Res.string.tcp_concurrent_desc), settings.tcpConcurrent, Icons.Rounded.CallSplit) { on -> controller.update({ s -> s.copy(tcpConcurrent = on) }, reapply = true) } },
+                    { SwitchRow(it, stringResource(Res.string.tcp_concurrent), stringResource(Res.string.tcp_concurrent_desc), settings.tcpConcurrent, Icons.AutoMirrored.Rounded.CallSplit) { on -> controller.update({ s -> s.copy(tcpConcurrent = on) }, reapply = true) } },
                     { SwitchRow(it, stringResource(Res.string.tfo), stringResource(Res.string.tfo_desc), settings.tcpFastOpen, Icons.Rounded.FastForward) { on -> controller.update({ s -> s.copy(tcpFastOpen = on) }, reapply = true) } },
                 ),
             )
@@ -758,10 +833,20 @@ fun AdvancedSettingsScreen(controller: AppController, nav: Navigator) {
                     { SwitchRow(it, stringResource(Res.string.show_advanced), stringResource(Res.string.show_advanced_desc), settings.showAdvanced, Icons.Rounded.Code) { on -> controller.update({ s -> s.copy(showAdvanced = on) }) } },
                 ),
             )
+            if (controller.platform.hasAutomation) {
+                SectionGroup(
+                    title = stringResource(Res.string.sec_automation),
+                    rows = listOf { shape ->
+                        SwitchNavRow(shape, stringResource(Res.string.automation), null, settings.automation, Icons.Rounded.SmartToy, { nav.push(Route.Automation) }) { on ->
+                            controller.setAutomation(on)
+                        }
+                    },
+                )
+            }
             SectionGroup(
                 title = stringResource(Res.string.sec_security),
                 rows = listOf(
-                    { SwitchRow(it, stringResource(Res.string.allow_bypass), stringResource(Res.string.allow_bypass_desc), settings.allowBypass, Icons.Rounded.AltRoute) { on -> controller.update({ s -> s.copy(allowBypass = on) }, reapply = true) } },
+                    { SwitchRow(it, stringResource(Res.string.allow_bypass), stringResource(Res.string.allow_bypass_desc), settings.allowBypass, Icons.AutoMirrored.Rounded.AltRoute) { on -> controller.update({ s -> s.copy(allowBypass = on) }, reapply = true) } },
                     { SwitchRow(it, stringResource(Res.string.skip_cert), stringResource(Res.string.skip_cert_desc), settings.skipCertVerify, Icons.Rounded.GppMaybe) { on -> if (on) confirmSkipCert = true else controller.update({ s -> s.copy(skipCertVerify = false) }, reapply = true) } },
                 ),
             )
@@ -888,50 +973,33 @@ fun RulesScreen(controller: AppController, onBack: () -> Unit) {
 fun WidgetsScreen(controller: AppController, onBack: () -> Unit) {
     val settings by controller.settings.collectAsState()
     val active = settings.widgets
-    val available = HomeWidget.entries.filter { it != HomeWidget.SplitApps || controller.platform.hasPerAppRouting }
-    val hidden = available.filter { it !in active }
+    val keys = remember(active) { widgetKeys(active) }
+    val available = HomeWidget.entries.filter { (it != HomeWidget.SplitApps || controller.platform.hasPerAppRouting) && it != HomeWidget.Divider }
+    val hidden = available.filter { it !in active } + HomeWidget.Divider
     val listState = rememberLazyListState()
     val platform = controller.platform
-    val scope = rememberCoroutineScope()
-    var dragged by remember { mutableStateOf<HomeWidget?>(null) }
-    var dragTop by remember { mutableStateOf(0f) }
-    var settledOffset by remember { mutableStateOf<Int?>(null) }
+    var pressed by remember { mutableStateOf<String?>(null) }
 
-    val landing = remember { mutableStateMapOf<HomeWidget, Float>() }
-
-    fun item(widget: HomeWidget) = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == widget }
-
-    fun swapIfNeeded() {
-        val widget = dragged ?: return
-        val current = item(widget) ?: return
-
-        if (settledOffset == current.offset) return
-        settledOffset = null
-        val order = controller.settings.value.widgets
-        val center = dragTop + current.size / 2
-        val target = listState.layoutInfo.visibleItemsInfo.firstOrNull {
-            it.key != widget && it.key in order && center > it.offset + it.size * 0.2f && center < it.offset + it.size * 0.8f
-        } ?: return
-        val from = order.indexOf(widget)
-        val to = order.indexOf(target.key)
-        if (from < 0 || to < 0) return
-        settledOffset = current.offset
-        controller.update({ s -> s.copy(widgets = s.widgets.toMutableList().apply { add(to, removeAt(from)) }) })
-        platform.haptic(Haptic.Tick)
+    DisposableEffect(Unit) {
+        onDispose { controller.update({ s -> s.copy(widgets = tidyWidgets(s.widgets)) }) }
     }
 
-    fun drop() {
-        val widget = dragged ?: return
-        val from = dragTop
-        landing[widget] = from
-        dragged = null
-        settledOffset = null
-        scope.launch {
-            val rest = item(widget)?.offset?.toFloat() ?: from
-            Animatable(from).animateTo(rest, spring(1f, 500f)) { landing[widget] = value }
-            landing.remove(widget)
-        }
-    }
+    // тут порядок сразу пишется в настройки, поэтому читаем его из controller, а не из композиции
+    val reorder = rememberReorderState(
+        listState,
+        keys = { widgetKeys(controller.settings.value.widgets) },
+        gapOf = { key ->
+            val order = controller.settings.value.widgets
+            widgetKeys(order).indexOf(key).takeIf { it >= 0 }?.let { widgetGap(order, it) } ?: 0.dp
+        },
+        haptic = platform::haptic,
+        canSwap = { from, to ->
+            val order = controller.settings.value.widgets
+            !(order[from] == HomeWidget.Divider && order[to] == HomeWidget.Divider)
+        },
+    ) { from, to -> controller.update({ s -> s.copy(widgets = s.widgets.toMutableList().apply { add(to, removeAt(from)) }) }) }
+    val dragged = reorder.dragged
+    LaunchedEffect(dragged) { if (dragged != null) pressed = null }
 
     SubScreen(stringResource(Res.string.widgets_title), onBack, collapsing = false) { padding ->
         LazyColumn(
@@ -948,66 +1016,67 @@ fun WidgetsScreen(controller: AppController, onBack: () -> Unit) {
                     modifier = Modifier.padding(start = 16.dp, bottom = 12.dp).animateItem(),
                 )
             }
-            items(active.size, key = { active[it] }) { index ->
+            val gaps = dragGaps(active, keys.indexOf(dragged)) { items, i -> widgetGap(items, i) }
+            items(active.size, key = { keys[it] }) { index ->
                 val widget = active[index]
-                val isDragged = dragged == widget
-                val isFree = isDragged || widget in landing
-                val shape = animatedRowShape(index, active.lastIndex, isDragged)
-                val lift by animateDpAsState(if (isDragged) 10.dp else 0.dp, label = "lift")
+                val key = keys[index]
+                val isDragged = dragged == key
+                val lifted = isDragged || pressed == key
+                val isFree = reorder.isFree(key)
+                val first = index == 0 || active[index - 1] == HomeWidget.Divider || widget == HomeWidget.Divider
+                val last = index == active.lastIndex || active[index + 1] == HomeWidget.Divider || widget == HomeWidget.Divider
+                val shape = animatedRowShape(first, last, lifted)
+                val lift by animateDpAsState(if (lifted) 10.dp else 0.dp, label = "lift")
+                val grow by animateFloatAsState(if (lifted) 1.03f else 1f, spring(0.6f, 600f), label = "grow")
+                val gap by animateDpAsState(gaps[index], DragGapSpring, label = "widgetGap")
                 Box(
                     (if (isFree) Modifier else Modifier.animateItem())
-                        .zIndex(if (isFree) 1f else 0f)
+                        .zIndex(if (isFree || lifted) 1f else 0f)
+                        .padding(top = gap.coerceAtLeast(0.dp))
                         .graphicsLayer {
-                            val top = if (isDragged) dragTop else landing[widget]
-                            if (top != null) item(widget)?.let { translationY = top - it.offset }
+                            translationY = reorder.translation(key, gap.toPx())
+                            scaleX = grow
+                            scaleY = grow
                             shadowElevation = lift.toPx()
                             this.shape = shape
                             clip = false
                         }
-                        .padding(top = if (index > 0) 2.dp else 0.dp),
+                        .reorderAfterLongPress(reorder, key),
                 ) {
                     WidgetRow(widget, shape, added = true, onClick = {
-                        controller.update({ s -> s.copy(widgets = s.widgets - widget) })
+                        controller.update({ s -> s.copy(widgets = s.widgets.toMutableList().apply { removeAt(index) }) })
                     }) {
                         Icon(
                             Icons.Rounded.DragHandle,
                             null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(40.dp).padding(8.dp).pointerInput(widget) {
-                                detectDragGestures(
-                                    onDragStart = {
-                                        landing.remove(widget)
-                                        dragged = widget
-                                        dragTop = item(widget)?.offset?.toFloat() ?: 0f
-                                        settledOffset = null
-                                        platform.haptic(Haptic.Toggle)
-                                    },
-                                    onDragEnd = ::drop,
-                                    onDragCancel = ::drop,
-                                    onDrag = { change, amount ->
-                                        change.consume()
-                                        dragTop += amount.y
-                                        swapIfNeeded()
-                                    },
-                                )
-                            },
+                            modifier = Modifier.size(40.dp).padding(8.dp)
+                                .pointerInput(key) {
+                                    awaitEachGesture {
+                                        awaitFirstDown(requireUnconsumed = false)
+                                        pressed = key
+                                        platform.haptic(Haptic.Tick)
+                                        val up = waitForUpOrCancellation()
+                                        up?.consume()
+                                        if (pressed == key) pressed = null
+                                    }
+                                }
+                                .reorderHandle(reorder, key),
                         )
                     }
                 }
             }
-            if (hidden.isNotEmpty()) {
-                item(key = "hidden-title") {
-                    Box(Modifier.animateItem()) { GroupTitle(stringResource(Res.string.widgets_hidden)) }
-                }
-                items(hidden.size, key = { hidden[it] }) { index ->
-                    val widget = hidden[index]
-                    val shape = animatedRowShape(index, hidden.lastIndex, false)
-                    Box(Modifier.animateItem().padding(top = if (index > 0) 2.dp else 0.dp)) {
-                        WidgetRow(widget, shape, added = false, onClick = {
-                            controller.update({ s -> s.copy(widgets = s.widgets + widget) })
-                        }) {
-                            Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp).padding(8.dp))
-                        }
+            item(key = "hidden-title") {
+                Box(Modifier.animateItem()) { GroupTitle(stringResource(Res.string.widgets_hidden)) }
+            }
+            items(hidden.size, key = { "add-" + hidden[it].name }) { index ->
+                val widget = hidden[index]
+                val shape = animatedRowShape(index == 0, index == hidden.lastIndex, false)
+                Box(Modifier.animateItem().padding(top = if (index > 0) 2.dp else 0.dp)) {
+                    WidgetRow(widget, shape, added = false, onClick = {
+                        controller.update({ s -> s.copy(widgets = s.widgets + widget) })
+                    }) {
+                        Icon(Icons.Rounded.Add, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp).padding(8.dp))
                     }
                 }
             }
@@ -1015,15 +1084,43 @@ fun WidgetsScreen(controller: AppController, onBack: () -> Unit) {
     }
 }
 
+private fun widgetGap(widgets: List<HomeWidget>, index: Int): androidx.compose.ui.unit.Dp = when {
+    index == 0 -> 0.dp
+    widgets[index] == HomeWidget.Divider || widgets[index - 1] == HomeWidget.Divider -> 10.dp
+    else -> 2.dp
+}
+
+private fun widgetKeys(widgets: List<HomeWidget>): List<String> {
+    var dividers = 0
+    return widgets.map { if (it == HomeWidget.Divider) "Divider#${dividers++}" else it.name }
+}
+
+fun tidyWidgets(widgets: List<HomeWidget>): List<HomeWidget> {
+    val out = mutableListOf<HomeWidget>()
+    widgets.forEach { widget ->
+        if (widget == HomeWidget.Divider && (out.isEmpty() || out.last() == HomeWidget.Divider)) return@forEach
+        out += widget
+    }
+    while (out.lastOrNull() == HomeWidget.Divider) out.removeAt(out.lastIndex)
+    return out
+}
+
 @Composable
 private fun WidgetRow(widget: HomeWidget, shape: Shape, added: Boolean, onClick: () -> Unit, trailing: @Composable () -> Unit) {
     SettingRow(
         shape,
         stringResource(widget.title()),
-        if (added) null else stringResource(widget.description()),
+        if (added || widget == HomeWidget.Divider) null else stringResource(widget.description()),
         onClick = onClick,
         trailing = trailing,
     )
+}
+
+@Composable
+private fun animatedRowShape(first: Boolean, last: Boolean, lifted: Boolean): Shape {
+    val top by animateDpAsState(if (lifted || first) 24.dp else 6.dp, label = "cornerTop")
+    val bottom by animateDpAsState(if (lifted || last) 24.dp else 6.dp, label = "cornerBottom")
+    return RoundedCornerShape(top, top, bottom, bottom)
 }
 
 @Composable

@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Zefir</string>
     <string name="tunnel_channel">VPN Status</string>
-    <string name="tunnel_channel_quiet">VPN Status (silent)</string>
     <string name="tunnel_on">VPN is connected</string>
     <string name="tunnel_connecting">Connecting…</string>
     <string name="tunnel_disconnect">Disconnect</string>

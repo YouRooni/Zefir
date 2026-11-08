@@ -22,7 +22,7 @@
 
 - **导入：**Clash YAML、Base64 订阅、节点分享链接，以及 WireGuard / AmneziaWG 配置文件。
 - **连接：**配置管理、节点选择和延迟测试。通过 mihomo 支持 VLESS、VMess、Trojan、Shadowsocks、Hysteria、Hysteria 2、TUIC、WireGuard 和 AmneziaWG。
-- **路由：**DNS 设置和流量规则、Android 按应用分流，Windows TUN 和系统代理，以及 Linux 系统代理。
+- **路由：**DNS 设置和流量规则、Android 按应用分流，Windows 和 Linux 的 TUN 与系统代理。
 - **诊断：**活动连接、流量、日志和网络检查。支持导出与恢复配置。
 
 界面支持英语、俄语、简体中文、乌克兰语和白俄罗斯语。

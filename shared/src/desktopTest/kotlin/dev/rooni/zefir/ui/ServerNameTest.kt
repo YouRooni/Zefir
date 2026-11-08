@@ -12,7 +12,7 @@ class ServerNameTest {
     fun wirelessWithoutFlag() {
         val name = parseServerName("\uD83D\uDEDC Обход")
         assertNull(name.flag)
-        assertTrue(name.wireless)
+        assertTrue(ServerTag.Wireless in name.tags)
         assertEquals("Обход", name.label)
     }
 
@@ -20,7 +20,7 @@ class ServerNameTest {
     fun wirelessWithFlag() {
         val name = parseServerName("\uD83C\uDDF7\uD83C\uDDFA \uD83D\uDEDC Москва")
         assertEquals("\uD83C\uDDF7\uD83C\uDDFA", name.flag)
-        assertTrue(name.wireless)
+        assertTrue(ServerTag.Wireless in name.tags)
         assertEquals("Москва", name.label)
     }
 

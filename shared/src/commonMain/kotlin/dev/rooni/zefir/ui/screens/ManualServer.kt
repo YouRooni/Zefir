@@ -1,5 +1,7 @@
 package dev.rooni.zefir.ui.screens
 
+import androidx.compose.foundation.lazy.LazyColumn
+import dev.rooni.zefir.app.transports
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -14,6 +16,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -43,10 +46,10 @@ import org.jetbrains.compose.resources.stringResource
 private enum class ManualMode { Form, Paste }
 
 private val ProtocolSections = listOf(
-    listOf(ManualType.Socks, ManualType.Http),
-    listOf(ManualType.Shadowsocks, ManualType.Vmess, ManualType.Trojan),
-    listOf(ManualType.Vless, ManualType.Hysteria2, ManualType.Tuic),
-    listOf(ManualType.WireGuard, ManualType.Amnezia),
+    Res.string.manual_group_popular to listOf(ManualType.Vless, ManualType.Trojan, ManualType.Shadowsocks, ManualType.Hysteria2),
+    Res.string.manual_group_wg to listOf(ManualType.WireGuard, ManualType.Amnezia),
+    Res.string.manual_group_more to listOf(ManualType.Vmess, ManualType.Tuic, ManualType.AnyTls, ManualType.Mieru),
+    Res.string.manual_group_proxy to listOf(ManualType.Socks, ManualType.Http, ManualType.Ssh),
 )
 
 private val ManualType.icon: androidx.compose.ui.graphics.vector.ImageVector
@@ -61,61 +64,101 @@ private val ManualType.icon: androidx.compose.ui.graphics.vector.ImageVector
         ManualType.Tuic -> Icons.Rounded.RocketLaunch
         ManualType.WireGuard -> Icons.Rounded.VpnLock
         ManualType.Amnezia -> Icons.Rounded.Masks
+        ManualType.AnyTls -> Icons.Rounded.Lock
+        ManualType.Mieru -> Icons.Rounded.Waves
+        ManualType.Ssh -> Icons.Rounded.Terminal
     }
 
 @Composable
 private fun ProtocolPicker(type: ManualType, onPick: (ManualType) -> Unit) {
     val platform = LocalPlatform.current
-    val menu = rememberMenuState()
+    var open by remember { mutableStateOf(false) }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp)
-    Box(Modifier.menuGesture(menu, platform, holdMillis = 320L)) {
-        Surface(
-            shape = shape,
-            color = MaterialTheme.colorScheme.surfaceContainer,
-            modifier = Modifier.fillMaxWidth().clip(shape).clickable {
-                platform.haptic(Haptic.Tick)
-                menu.show()
-            },
-        ) {
-            Row(Modifier.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                AnimatedContent(
-                    type,
-                    label = "protocolIcon",
-                    transitionSpec = { fadeIn(tween(200, 60)) togetherWith fadeOut(tween(100)) },
-                ) { current ->
-                    Box(
-                        Modifier.size(56.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(current.icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+    Surface(
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainer,
+        modifier = Modifier.fillMaxWidth().clip(shape).clickable {
+            platform.haptic(Haptic.Tick)
+            open = true
+        },
+    ) {
+        Row(Modifier.padding(start = 12.dp, end = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AnimatedContent(
+                type,
+                label = "protocolIcon",
+                transitionSpec = { fadeIn(tween(200, 60)) togetherWith fadeOut(tween(100)) },
+            ) { current ->
+                Box(
+                    Modifier.size(56.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(current.icon, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+            }
+            AnimatedContent(
+                type,
+                Modifier.weight(1f).padding(horizontal = 16.dp),
+                label = "protocolText",
+                transitionSpec = {
+                    fadeIn(tween(200, 60)) togetherWith fadeOut(tween(100)) using SizeTransform(clip = false) { _, _ -> spring(dampingRatio = 1f, stiffness = 500f) }
+                },
+            ) { current ->
+                Column {
+                    Text(stringResource(Res.string.manual_protocol), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(current.label, style = MaterialTheme.typography.titleLargeEmphasized)
+                }
+            }
+            Icon(Icons.Rounded.UnfoldMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    if (open) {
+        ModalBottomSheet(onDismissRequest = { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
+            SheetHandle()
+            LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                ProtocolSections.forEach { (title, options) ->
+                    item(key = "t-" + title.key) { GroupTitle(stringResource(title)) }
+                    items(options.size, key = { options[it].name }) { index ->
+                        val option = options[index]
+                        val picked = option == type
+                        Box(Modifier.padding(top = if (index > 0) 2.dp else 0.dp)) {
+                            SettingRow(
+                                positionShape(index, options.lastIndex),
+                                option.label,
+                                stringResource(option.short),
+                                option.icon,
+                                color = if (picked) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainer,
+                                onClick = {
+                                    platform.haptic(Haptic.Tick)
+                                    onPick(option)
+                                    open = false
+                                },
+                            ) {
+                                if (picked) Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
                     }
                 }
-                AnimatedContent(
-                    type,
-                    Modifier.weight(1f).padding(horizontal = 16.dp),
-                    label = "protocolText",
-                    transitionSpec = {
-                        fadeIn(tween(200, 60)) togetherWith fadeOut(tween(100)) using SizeTransform(clip = false) { _, _ -> spring(dampingRatio = 1f, stiffness = 500f) }
-                    },
-                ) { current ->
-                    Column {
-                        Text(stringResource(Res.string.manual_protocol), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(current.label, style = MaterialTheme.typography.titleLargeEmphasized)
-                    }
-                }
-                Icon(Icons.Rounded.UnfoldMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        MenuForState(
-            menu,
-            ProtocolSections.flatMap { section ->
-                section.mapIndexed { index, option ->
-                    MenuEntry(option.label, option.icon, checked = option == type, endsSection = index == section.lastIndex) { onPick(option) }
-                }
-            },
-        )
     }
 }
+
+private val ManualType.short: StringResource
+    get() = when (this) {
+        ManualType.Vless -> Res.string.manual_short_vless
+        ManualType.Trojan -> Res.string.manual_short_trojan
+        ManualType.Shadowsocks -> Res.string.manual_short_ss
+        ManualType.Hysteria2 -> Res.string.manual_short_hy2
+        ManualType.WireGuard -> Res.string.manual_short_wg
+        ManualType.Amnezia -> Res.string.manual_short_awg
+        ManualType.Vmess -> Res.string.manual_short_vmess
+        ManualType.Tuic -> Res.string.manual_short_tuic
+        ManualType.AnyTls -> Res.string.manual_short_anytls
+        ManualType.Mieru -> Res.string.manual_short_mieru
+        ManualType.Socks -> Res.string.manual_short_socks
+        ManualType.Http -> Res.string.manual_short_http
+        ManualType.Ssh -> Res.string.manual_short_ssh
+    }
 
 @Composable
 fun ManualServerScreen(controller: AppController, editing: String?, onBack: () -> Unit, onSaved: () -> Unit) {
@@ -261,6 +304,9 @@ private val ManualType.hint: StringResource
         ManualType.Tuic -> Res.string.manual_tuic_hint
         ManualType.WireGuard -> Res.string.manual_wg_hint
         ManualType.Amnezia -> Res.string.manual_awg_hint
+        ManualType.AnyTls -> Res.string.manual_anytls_hint
+        ManualType.Mieru -> Res.string.manual_mieru_hint
+        ManualType.Ssh -> Res.string.manual_ssh_hint
     }
 
 @Composable
@@ -295,7 +341,11 @@ private fun ServerForm(server: ManualServer, tried: Boolean, failure: ImportErro
                 },
                 GroupRow("port") { shape ->
                     FieldRow(shape, Icons.Rounded.Numbers) {
-                        AppTextField(server.port, { value -> onChange(server.copy(port = value.filter(Char::isDigit).take(5))) }, stringResource(Res.string.manual_port), hint = if (type == ManualType.Http) "8080" else "443")
+                        AppTextField(server.port, { value -> onChange(server.copy(port = value.filter(Char::isDigit).take(5))) }, stringResource(Res.string.manual_port), hint = when (type) {
+                            ManualType.Http -> "8080"
+                            ManualType.Ssh -> "22"
+                            else -> "443"
+                        })
                     }
                 },
             ),
@@ -306,7 +356,7 @@ private fun ServerForm(server: ManualServer, tried: Boolean, failure: ImportErro
             listOf(
                 GroupRow("user", type.usesLogin) { shape ->
                     FieldRow(shape, Icons.Rounded.Person) {
-                        AppTextField(server.user, { onChange(server.copy(user = it)) }, stringResource(Res.string.manual_user), hint = optional)
+                        AppTextField(server.user, { onChange(server.copy(user = it)) }, stringResource(Res.string.manual_user), hint = if (type.needsUser) null else optional)
                     }
                 },
                 GroupRow("uuid", type.usesUuid) { shape ->
@@ -390,7 +440,7 @@ private fun ServerForm(server: ManualServer, tried: Boolean, failure: ImportErro
                         AppTextField(server.sni, { onChange(server.copy(sni = it.trim())) }, stringResource(Res.string.manual_sni), hint = optional)
                     }
                 },
-                GroupRow("fingerprint", tlsShown && type.hasTransport) { shape ->
+                GroupRow("fingerprint", tlsShown && (type.hasTransport || type == ManualType.AnyTls)) { shape ->
                     OptionRow(shape, stringResource(Res.string.manual_fingerprint), stringResource(Res.string.manual_fingerprint_desc), Icons.Rounded.Fingerprint, FINGERPRINTS.map { it to it }, server.fingerprint) {
                         onChange(server.copy(fingerprint = it))
                     }
@@ -428,22 +478,22 @@ private fun ServerForm(server: ManualServer, tried: Boolean, failure: ImportErro
             stringResource(Res.string.manual_transport),
             listOf(
                 GroupRow("network", type.hasTransport) { shape ->
-                    OptionRow(shape, stringResource(Res.string.manual_network), stringResource(Res.string.manual_cipher_desc), Icons.Rounded.SwapHoriz, ManualTransport.entries.map { it to it.label }, transport) {
+                    OptionRow(shape, stringResource(Res.string.manual_network), stringResource(Res.string.manual_cipher_desc), Icons.Rounded.SwapHoriz, type.transports().map { it to it.label }, transport) {
                         onChange(server.copy(transport = it))
                     }
                 },
-                GroupRow("path", type.hasTransport && (transport == ManualTransport.Ws || transport == ManualTransport.H2)) { shape ->
+                GroupRow("path", type.hasTransport && (transport == ManualTransport.Ws || transport == ManualTransport.H2 || transport == ManualTransport.Xhttp)) { shape ->
                     FieldRow(shape, Icons.Rounded.Route) {
                         AppTextField(server.path, { onChange(server.copy(path = it.trim())) }, stringResource(Res.string.manual_path), hint = "/")
                     }
                 },
-                GroupRow("hostHeader", type.hasTransport && (transport == ManualTransport.Ws || transport == ManualTransport.H2)) { shape ->
+                GroupRow("hostHeader", type.hasTransport && (transport == ManualTransport.Ws || transport == ManualTransport.H2 || transport == ManualTransport.Xhttp)) { shape ->
                     FieldRow(shape, Icons.Rounded.Language) {
                         AppTextField(server.hostHeader, { onChange(server.copy(hostHeader = it.trim())) }, stringResource(Res.string.manual_host_header), hint = optional)
                     }
                 },
                 GroupRow("service", type.hasTransport && transport == ManualTransport.Grpc) { shape ->
-                    FieldRow(shape, Icons.Rounded.Label) {
+                    FieldRow(shape, Icons.AutoMirrored.Rounded.Label) {
                         AppTextField(server.service, { onChange(server.copy(service = it.trim())) }, stringResource(Res.string.manual_service))
                     }
                 },
@@ -454,7 +504,7 @@ private fun ServerForm(server: ManualServer, tried: Boolean, failure: ImportErro
             stringResource(Res.string.manual_look),
             listOf(
                 GroupRow("name") { shape ->
-                    FieldRow(shape, Icons.Rounded.Label) {
+                    FieldRow(shape, Icons.AutoMirrored.Rounded.Label) {
                         AppTextField(server.name, { onChange(server.copy(name = it)) }, stringResource(Res.string.manual_name), hint = server.title)
                     }
                 },
@@ -465,6 +515,7 @@ private fun ServerForm(server: ManualServer, tried: Boolean, failure: ImportErro
             when (missing) {
                 ManualField.Host -> stringResource(Res.string.manual_need_host)
                 ManualField.Port -> stringResource(Res.string.manual_need_port)
+                ManualField.User -> stringResource(Res.string.manual_need_user)
                 ManualField.Password -> stringResource(Res.string.manual_need_password)
                 ManualField.Uuid -> stringResource(Res.string.manual_need_uuid)
                 ManualField.Keys -> stringResource(Res.string.manual_need_keys)

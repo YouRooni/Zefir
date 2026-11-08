@@ -66,6 +66,8 @@ KEY_PASSWORD=your-key-password
 
 Then run `./gradlew :androidApp:assembleRelease`. APKs are written to `androidApp/build/outputs/apk/release/`, one per configured ABI. Release builds use R8 and resource shrinking.
 
+Zefir X, the Google Play build (`dev.rooni.zefir.x`), is the same app without device identity overrides. Add `-Pzefir.channel=play`, for example `./gradlew :androidApp:bundleRelease -Pzefir.channel=play`; the bundle is written to `androidApp/build/outputs/bundle/release/`.
+
 Without a keystore, local release builds use the debug key. CI requires signing credentials. A self-built APK can update an installed APK only when their signing keys match.
 
 ## 3. Test and package Windows

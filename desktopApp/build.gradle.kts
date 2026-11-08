@@ -13,6 +13,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(libs.coroutines.swing)
     implementation(libs.jna)
+    implementation(libs.composenativetray)
 }
 
 val hostLinux = org.gradle.internal.os.OperatingSystem.current().isLinux
@@ -32,6 +33,7 @@ val appVersion = zefirVersionName.substringBefore('-')
 
 compose.desktop.application {
     mainClass = "dev.rooni.zefir.MainKt"
+    if (hostLinux) jvmArgs += listOf("--add-opens", "java.desktop/sun.awt.X11=ALL-UNNAMED")
     nativeDistributions {
         modules("java.instrument", "java.management", "jdk.unsupported", "java.naming", "jdk.crypto.ec", "jdk.accessibility")
         appResourcesRootDir.set(appResources)

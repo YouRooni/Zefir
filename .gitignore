@@ -26,3 +26,4 @@ agent_diary.md
 scripts/remote-build.sh
 scripts/sign-release.sh
 
+scripts/build-play.sh

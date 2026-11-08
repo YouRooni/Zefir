@@ -1,5 +1,8 @@
 package dev.rooni.zefir.ui
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
@@ -84,6 +87,7 @@ sealed interface Route {
     data object DnsLog : Route
     data class SiteCheck(val host: String? = null) : Route
     data object AutoRules : Route
+    data object Automation : Route
     data class EditProfile(val id: String) : Route
     data class MergeProfiles(val id: String? = null) : Route
     data class ManualServer(val name: String? = null) : Route
@@ -183,6 +187,7 @@ class Navigator(private val scope: CoroutineScope) {
 @Composable
 fun App(controller: AppController) {
     val settings by controller.settings.collectAsState()
+    SideEffect { AppMotion.off = settings.noAnimations }
     val scope = rememberCoroutineScope()
     var reveal by remember { mutableStateOf<Offset?>(null) }
     val radius = remember { Animatable(0f) }
@@ -304,6 +309,7 @@ private fun MainFlow(controller: AppController) {
                 Route.DnsLog -> DnsLogScreen(controller, onBack = { nav.pop() })
                 is Route.SiteCheck -> SiteCheckScreen(controller, onBack = { nav.pop() }, route.host)
                 Route.AutoRules -> AutoRulesScreen(controller, onBack = { nav.pop() })
+                Route.Automation -> AutomationScreen(controller, onBack = { nav.pop() })
                 is Route.EditProfile -> EditProfileScreen(controller, route.id, onBack = { nav.pop() })
                 is Route.MergeProfiles -> MergeProfilesScreen(controller, route.id, onBack = { nav.pop() })
                 is Route.ManualServer -> ManualServerScreen(controller, route.name, onBack = { nav.pop() }, onSaved = {
@@ -556,12 +562,14 @@ private fun TabsScreen(controller: AppController, nav: Navigator) {
                 HorizontalPager(pager, modifier, beyondViewportPageCount = Tab.entries.lastIndex) { page ->
                     val tab = Tab.entries[page]
                     holder.SaveableStateProvider(tab.name) {
+                        CompositionLocalProvider(LocalCaptionActive provides (nav.tab == tab && nav.stack.size == 1)) {
                         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                             when (tab) {
                                 Tab.Home -> HomeScreen(controller, nav, split)
                                 Tab.Servers -> ServersScreen(controller, nav)
                                 Tab.Settings -> SettingsHubScreen(controller, nav)
                             }
+                        }
                         }
                     }
                 }
@@ -571,6 +579,25 @@ private fun TabsScreen(controller: AppController, nav: Navigator) {
             Row(Modifier.fillMaxSize()) {
                 NavRail(controller, nav, centered = tallRail)
                 content(Modifier.weight(1f).fillMaxHeight())
+            }
+        } else if (FloatingNavEnabled && controller.settings.collectAsState().value.floatingNav) {
+            val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+            val scrim = MaterialTheme.colorScheme.scrim
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+                CompositionLocalProvider(LocalNavBarSpace provides FloatingNavSpace + bottomInset) {
+                    content(Modifier.fillMaxSize())
+                }
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(FloatingNavSpace + bottomInset + 24.dp)
+                        .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(androidx.compose.ui.graphics.Color.Transparent, scrim.copy(alpha = 0.32f)))),
+                )
+                HorizontalFloatingToolbar(
+                    expanded = true,
+                    colors = FloatingToolbarDefaults.standardFloatingToolbarColors(),
+                    modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+                ) {
+                    Tab.entries.forEach { tab -> FloatingNavItem(tab, nav.tab == tab) { switchTab(controller, nav, tab) } }
+                }
             }
         } else {
             Scaffold(
@@ -596,6 +623,29 @@ private fun TabsScreen(controller: AppController, nav: Navigator) {
     }
 }
 
+private val FloatingNavSpace = 88.dp
+
+// плавающая панель выключена для всех, даже у кого была включена. Вернём - ставим true и раскомменчиваем свитч в Settings.kt
+private val FloatingNavEnabled = false
+
+@Composable
+private fun FloatingNavItem(tab: Tab, selected: Boolean, onClick: () -> Unit) {
+    val fill by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, label = "floatFill")
+    val tint by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, label = "floatTint")
+    Row(
+        Modifier.height(48.dp).clip(CircleShape).background(fill).clickable(onClick = onClick).padding(horizontal = 12.dp).animateContentSize(spring(dampingRatio = 0.8f, stiffness = 500f)),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompositionLocalProvider(LocalContentColor provides tint) {
+            NavIcon(tab, selected)
+            if (selected) {
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(tab.label), style = MaterialTheme.typography.labelLarge, maxLines = 1)
+            }
+        }
+    }
+}
+
 @Composable
 private fun NavRail(controller: AppController, nav: Navigator, centered: Boolean) {
     val scope = rememberCoroutineScope()
@@ -603,9 +653,11 @@ private fun NavRail(controller: AppController, nav: Navigator, centered: Boolean
         if (controller.settings.collectAsState().value.railExpanded) WideNavigationRailValue.Expanded else WideNavigationRailValue.Collapsed,
     )
     val expanded = state.targetValue == WideNavigationRailValue.Expanded
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    CaptionRail(nav.stack.size == 1, MaterialTheme.colorScheme.surfaceContainer)
     WideNavigationRail(
         state = state,
-        modifier = Modifier.zIndex(1f).shadow(8.dp),
+        modifier = Modifier.zIndex(1f).shadow(8.dp).onSizeChanged { reportRailWidth(with(density) { it.width.toDp() }) },
 
         arrangement = if (centered) Arrangement.Center else Arrangement.Top,
         colors = WideNavigationRailDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainer),

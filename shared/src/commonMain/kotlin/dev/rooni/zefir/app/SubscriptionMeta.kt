@@ -272,11 +272,11 @@ private fun xrayBalancer(config: JsonObject, outbounds: List<JsonObject>, index:
     if (balancers.isEmpty()) return null
     val used = (routing["rules"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.str("balancerTag") }.toSet()
     val balancer = balancers.firstOrNull { it.str("tag") in used } ?: balancers.first()
-    val prefixes = (balancer["selector"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
-    val picked = outbounds.filter { out -> val tag = out.str("tag").orEmpty(); prefixes.any { tag.startsWith(it) } }
+    val prefixes = (balancer["selector"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.ifEmpty { null } }
+    val picked = if (prefixes.isEmpty()) outbounds else outbounds.filter { out -> val tag = out.str("tag").orEmpty(); prefixes.any { tag.startsWith(it) } }
     if (picked.size < 2) return null
     val title = config.str("remarks") ?: balancer.str("tag") ?: "Auto ${index + 1}"
-    val members = picked.mapIndexedNotNull { i, out -> xrayProxy(config, out, index, "$title · ${i + 1}") }
+    val members = picked.mapIndexedNotNull { i, out -> xrayProxy(config, out, index, "$title [${out.str("tag") ?: (i + 1).toString()}]") }
     if (members.size < 2) return null
     val probe = config.obj("burstObservatory")?.obj("pingConfig")?.str("destination")
         ?: config.obj("observatory")?.str("probeURL") ?: config.obj("observatory")?.str("probeUrl")

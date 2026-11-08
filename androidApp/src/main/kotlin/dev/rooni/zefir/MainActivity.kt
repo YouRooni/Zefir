@@ -3,9 +3,17 @@ package dev.rooni.zefir
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.PausableMonotonicFrameClock
+import androidx.compose.runtime.Recomposer
+import androidx.compose.ui.platform.AndroidUiDispatcher
+import androidx.compose.ui.platform.ComposeView
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.lifecycleScope
 import dev.rooni.zefir.ui.App
+import dev.rooni.zefir.ui.AppMotion
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -14,11 +22,33 @@ class MainActivity : ComponentActivity() {
         val vpnApp = application as ZefirApp
         vpnApp.platform.attach(this)
         handleLink(intent)
-        setContent { App(vpnApp.controller) }
+        readSystemScale()
+        val ui = AndroidUiDispatcher.CurrentThread
+        val clock = PausableMonotonicFrameClock(ui[androidx.compose.runtime.MonotonicFrameClock]!!)
+        val context = ui + clock + AppMotion
+        val recomposer = Recomposer(context)
+        lifecycleScope.launch(context) { recomposer.runRecomposeAndApplyChanges() }
+        lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = clock.resume()
+            override fun onStop(owner: LifecycleOwner) = clock.pause()
+            override fun onDestroy(owner: LifecycleOwner) = recomposer.cancel()
+        })
+        val view = ComposeView(this).apply {
+            setParentCompositionContext(recomposer)
+            setContent { App(vpnApp.controller) }
+        }
+        setContentView(view)
+    }
+
+    private fun readSystemScale() {
+        AppMotion.system = runCatching {
+            android.provider.Settings.Global.getFloat(contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        }.getOrDefault(1f)
     }
 
     override fun onResume() {
         super.onResume()
+        readSystemScale()
         (application as ZefirApp).platform.onResume()
     }
 

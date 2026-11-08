@@ -1,5 +1,7 @@
 package dev.rooni.zefir.ui.screens
 
+import androidx.compose.ui.unit.Dp
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.clickable
@@ -70,6 +72,8 @@ private fun HomeContent(controller: AppController, nav: Navigator, wide: Boolean
     }
 
     if (wide) {
+        val surface = MaterialTheme.colorScheme.surface
+        CaptionColor(nav.stack.size == 1 && nav.tab == Tab.Home) { surface }
         Row(Modifier.fillMaxSize().systemBarsPadding().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                 ConnectHero(tunnel, hasProfile, controller, nav.stack.size == 1 && nav.tab == Tab.Home) { if (hasProfile) controller.pressToggle() else nav.push(Route.Add) }
@@ -78,7 +82,7 @@ private fun HomeContent(controller: AppController, nav: Navigator, wide: Boolean
             BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
                 Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).heightIn(min = maxHeight).padding(top = 48.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                    verticalArrangement = Arrangement.spacedBy(WidgetGap, Alignment.CenterVertically),
                 ) {
                     Widgets(controller, nav, settings)
                 }
@@ -91,10 +95,13 @@ private fun HomeContent(controller: AppController, nav: Navigator, wide: Boolean
         ReselectEffect(nav, Tab.Home) { scroll.animateScrollTo(0) }
         val barColor = MaterialTheme.colorScheme.surfaceContainer
         val fadeDistance = with(androidx.compose.ui.platform.LocalDensity.current) { 48.dp.toPx() }
+        val homeShown = nav.stack.size == 1 && nav.tab == Tab.Home
+        val surface = MaterialTheme.colorScheme.surface
+        CaptionColor(homeShown) { androidx.compose.ui.graphics.lerp(surface, barColor, (scroll.value / fadeDistance).coerceIn(0f, 1f)) }
         val shadowHeight = with(androidx.compose.ui.platform.LocalDensity.current) { 6.dp.toPx() }
         Box(Modifier.fillMaxSize()) {
             Column(
-                Modifier.fillMaxSize().verticalScroll(scroll).heightIn(min = height).statusBarsPadding().padding(top = 56.dp, bottom = 16.dp),
+                Modifier.fillMaxSize().verticalScroll(scroll).heightIn(min = height).statusBarsPadding().padding(top = 56.dp, bottom = 16.dp + LocalNavBarSpace.current),
                 horizontalAlignment = Alignment.CenterHorizontally,
 
                 verticalArrangement = Arrangement.SpaceBetween,
@@ -103,7 +110,7 @@ private fun HomeContent(controller: AppController, nav: Navigator, wide: Boolean
                 ConnectHero(tunnel, hasProfile, controller, nav.stack.size == 1 && nav.tab == Tab.Home) { if (hasProfile) controller.pressToggle() else nav.push(Route.Add) }
                 Column(
                     Modifier.widthIn(max = ContentMaxWidth).padding(horizontal = 16.dp).padding(top = 12.dp).animateContentSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(WidgetGap),
                 ) {
                     Widgets(controller, nav, settings)
                 }
@@ -197,8 +204,9 @@ private fun ConnectHero(state: TunnelState, hasProfile: Boolean, controller: App
     }
     val turn = remember { mutableFloatStateOf(0f) }
 
-    LaunchedEffect(live, on, visible) {
-        if (live && visible) {
+    val still = controller.settings.collectAsState().value.noAnimations
+    LaunchedEffect(live, on, visible, still) {
+        if (live && visible && !still) {
             var rate = if (on) SPIN_IDLE else SPIN_START
             var last = withFrameNanos { it }
             while (true) {
@@ -262,6 +270,17 @@ private fun ConnectHero(state: TunnelState, hasProfile: Boolean, controller: App
 
     val detailed = controller.settings.collectAsState().value.detailedErrors
     val failure = (shownState as? TunnelState.Failed)?.message
+    fun heroLong() {
+        val at = position.value
+        if (catShown) {
+            catShown = false
+            controller.platform.haptic(Haptic.Press)
+        } else if (at == HERO_OFF || at == HERO_ON) {
+            catFromOn = at == HERO_ON
+            catShown = true
+            controller.platform.haptic(Haptic.Press)
+        }
+    }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(top = 8.dp)) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.size(heroSize)) {
             Surface(
@@ -274,20 +293,10 @@ private fun ConnectHero(state: TunnelState, hasProfile: Boolean, controller: App
                     val at = position.value
                     val starShare = (1f - abs(at - HERO_ON)).coerceIn(0f, 1f)
                     rotationZ = (at * HERO_STEP_DEGREES + turn.floatValue * starShare) * (1f - cat.value)
-                }.clip(shapeNow).pressTracking { pressed = it }.combinedClickable(
+                }.clip(shapeNow).pressTracking { pressed = it }.onSecondaryClick { heroLong() }.combinedClickable(
                     interactionSource = press,
                     indication = androidx.compose.foundation.LocalIndication.current,
-                    onLongClick = {
-                        val at = position.value
-                        if (catShown) {
-                            catShown = false
-                            controller.platform.haptic(Haptic.Press)
-                        } else if (at == HERO_OFF || at == HERO_ON) {
-                            catFromOn = at == HERO_ON
-                            catShown = true
-                            controller.platform.haptic(Haptic.Press)
-                        }
-                    },
+                    onLongClick = { heroLong() },
                     onClick = {
                         controller.platform.haptic(Haptic.Press)
                         catShown = false
@@ -332,19 +341,36 @@ private fun ConnectHero(state: TunnelState, hasProfile: Boolean, controller: App
     }
 }
 
+private val WidgetGap = 2.dp
+private val SectionGap = 8.dp
+private val WidgetOuter = 24.dp
+private val WidgetInner = 6.dp
+
 @Composable
 private fun Widgets(controller: AppController, nav: Navigator, settings: AppSettings) {
-    settings.widgets.forEach { widget ->
+    val list = remember(settings.widgets) { tidyWidgets(settings.widgets) }
+    var dividers = 0
+    list.forEachIndexed { index, widget ->
+        if (widget == HomeWidget.Divider) {
+            key("Divider#${dividers++}") { Spacer(Modifier.height(SectionGap)) }
+            return@forEachIndexed
+        }
         key(widget) {
-            val shape: Shape = MaterialTheme.shapes.large
+            val first = index == 0 || list[index - 1] == HomeWidget.Divider
+            val last = index == list.lastIndex || list[index + 1] == HomeWidget.Divider
+            val top by animateDpAsState(if (first) WidgetOuter else WidgetInner, tween(260), label = "widgetTop")
+            val bottom by animateDpAsState(if (last) WidgetOuter else WidgetInner, tween(260), label = "widgetBottom")
+            val shape: Shape = RoundedCornerShape(top, top, bottom, bottom)
             when (widget) {
                 HomeWidget.Server -> ServerWidget(controller, nav, shape)
-                HomeWidget.Subscription -> SubscriptionWidget(controller, nav, shape)
-                HomeWidget.Mode -> ModeWidget(controller, settings)
-                HomeWidget.Speed -> SpeedWidget(controller)
-                HomeWidget.Traffic -> TrafficWidget(controller)
+                HomeWidget.Subscription -> SubscriptionWidget(controller, nav, shape, top, bottom)
+                HomeWidget.Mode -> ModeWidget(controller, settings, shape)
+                HomeWidget.Speed -> SpeedWidget(controller, top, bottom)
+                HomeWidget.Session -> SessionWidget(controller, shape)
+                HomeWidget.Traffic -> TrafficWidget(controller, top, bottom)
                 HomeWidget.SplitApps -> AppsWidget(settings, nav, shape)
                 HomeWidget.ExitIp -> ExitIpWidget(controller, shape)
+                HomeWidget.Divider -> Unit
             }
         }
     }
@@ -400,7 +426,7 @@ private fun ExitIpWidget(controller: AppController, shape: Shape) {
 }
 
 @Composable
-private fun SubscriptionWidget(controller: AppController, nav: Navigator, shape: Shape) {
+private fun SubscriptionWidget(controller: AppController, nav: Navigator, shape: Shape, top: Dp, bottom: Dp) {
     val settings by controller.settings.collectAsState()
     val profiles by controller.profiles.collectAsState()
     val profile = profiles.firstOrNull { it.id == settings.activeProfile }
@@ -412,19 +438,19 @@ private fun SubscriptionWidget(controller: AppController, nav: Navigator, shape:
     }
 
     Column(Modifier.fillMaxWidth().clip(shape).clickable { nav.openServers(1) }, verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Surface(shape = RoundedCornerShape(24.dp, 24.dp, 6.dp, 6.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+        Surface(shape = RoundedCornerShape(top, top, WidgetInner, WidgetInner), color = MaterialTheme.colorScheme.surfaceContainer) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(profile.name, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f), maxLines = 1)
                 Icon(Icons.AutoMirrored.Rounded.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        SubscriptionStats(profile, flat = true)
+        SubscriptionStats(profile, flat = true, bottom = bottom)
     }
 }
 
 @Composable
-private fun ModeWidget(controller: AppController, settings: AppSettings) {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+private fun ModeWidget(controller: AppController, settings: AppSettings, shape: Shape) {
+    Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(stringResource(Res.string.mode_title), style = MaterialTheme.typography.titleMedium)
             ChoiceButtons(
@@ -438,8 +464,6 @@ private fun ModeWidget(controller: AppController, settings: AppSettings) {
     }
 }
 
-private val LeftCell = RoundedCornerShape(24.dp, 6.dp, 6.dp, 24.dp)
-private val RightCell = RoundedCornerShape(6.dp, 24.dp, 24.dp, 6.dp)
 
 @Composable
 private fun StatTile(label: String, value: String, shape: Shape, modifier: Modifier = Modifier) {
@@ -452,17 +476,16 @@ private fun StatTile(label: String, value: String, shape: Shape, modifier: Modif
 }
 
 @Composable
-private fun SpeedWidget(controller: AppController) {
+private fun SpeedWidget(controller: AppController, top: Dp, bottom: Dp) {
     val speed by controller.speed.collectAsState()
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        StatTile(stringResource(Res.string.w_download), formatSpeed(speed.down), LeftCell, Modifier.weight(1f))
-        StatTile(stringResource(Res.string.w_upload), formatSpeed(speed.up), RightCell, Modifier.weight(1f))
+        StatTile(stringResource(Res.string.w_download), formatSpeed(speed.down), RoundedCornerShape(top, WidgetInner, WidgetInner, bottom), Modifier.weight(1f))
+        StatTile(stringResource(Res.string.w_upload), formatSpeed(speed.up), RoundedCornerShape(WidgetInner, top, bottom, WidgetInner), Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun TrafficWidget(controller: AppController) {
-    val total by controller.total.collectAsState()
+private fun SessionWidget(controller: AppController, shape: Shape) {
     val since by controller.connectedAt.collectAsState()
     val now by produceState(nowMillis(), since) {
         while (since != null) {
@@ -471,23 +494,25 @@ private fun TrafficWidget(controller: AppController) {
         }
     }
     val time = since?.let { formatDuration((now - it) / 1000) } ?: stringResource(Res.string.w_session_off)
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Surface(shape = RoundedCornerShape(24.dp, 24.dp, 6.dp, 6.dp), color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    stringResource(Res.string.w_session_time),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
+    Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                stringResource(Res.string.w_session_time),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            Text(time, style = MaterialTheme.typography.titleLargeEmphasized.copy(fontFeatureSettings = "tnum"), maxLines = 1)
+        }
+    }
+}
 
-                Text(time, style = MaterialTheme.typography.titleLargeEmphasized.copy(fontFeatureSettings = "tnum"), maxLines = 1)
-            }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            StatTile(stringResource(Res.string.w_download), formatBytes(total.down), RoundedCornerShape(6.dp, 6.dp, 6.dp, 24.dp), Modifier.weight(1f))
-            StatTile(stringResource(Res.string.w_upload), formatBytes(total.up), RoundedCornerShape(6.dp, 6.dp, 24.dp, 6.dp), Modifier.weight(1f))
-        }
+@Composable
+private fun TrafficWidget(controller: AppController, top: Dp, bottom: Dp) {
+    val total by controller.total.collectAsState()
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        StatTile(stringResource(Res.string.w_download), formatBytes(total.down), RoundedCornerShape(top, WidgetInner, WidgetInner, bottom), Modifier.weight(1f))
+        StatTile(stringResource(Res.string.w_upload), formatBytes(total.up), RoundedCornerShape(WidgetInner, top, bottom, WidgetInner), Modifier.weight(1f))
     }
 }
 
@@ -511,9 +536,11 @@ fun HomeWidget.title() = when (this) {
     HomeWidget.Subscription -> Res.string.w_subscription
     HomeWidget.Mode -> Res.string.w_mode
     HomeWidget.Speed -> Res.string.w_speed
+    HomeWidget.Session -> Res.string.w_session
     HomeWidget.Traffic -> Res.string.w_traffic
     HomeWidget.SplitApps -> Res.string.w_apps
     HomeWidget.ExitIp -> Res.string.w_ip
+    HomeWidget.Divider -> Res.string.w_divider
 }
 
 fun HomeWidget.description() = when (this) {
@@ -521,7 +548,9 @@ fun HomeWidget.description() = when (this) {
     HomeWidget.Subscription -> Res.string.w_subscription_desc
     HomeWidget.Mode -> Res.string.w_mode_desc
     HomeWidget.Speed -> Res.string.w_speed_desc
+    HomeWidget.Session -> Res.string.w_session_desc
     HomeWidget.Traffic -> Res.string.w_traffic_desc
     HomeWidget.SplitApps -> Res.string.w_apps_desc
     HomeWidget.ExitIp -> Res.string.w_ip_desc
+    HomeWidget.Divider -> Res.string.w_divider
 }

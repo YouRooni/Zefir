@@ -1,9 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launcher_bg">#FF1A3D35</color>
-    <string name="app_name">Zefir</string>
     <string name="tunnel_channel">Состояние VPN</string>
-    <string name="tunnel_channel_quiet">Состояние VPN (скрытое)</string>
     <string name="tunnel_on">VPN включён</string>
     <string name="tunnel_connecting">Подключаемся</string>
     <string name="tunnel_disconnect">Отключить</string>

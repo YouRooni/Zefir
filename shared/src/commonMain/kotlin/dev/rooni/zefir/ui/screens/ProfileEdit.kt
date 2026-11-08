@@ -8,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -225,7 +226,7 @@ fun EditProfileScreen(controller: AppController, id: String, onBack: () -> Unit)
                     stringResource(Res.string.sub_routing),
                     stringResource(Res.string.sub_routing_desc, routing.size),
                     profile.routingEnabled,
-                    Icons.Rounded.AltRoute,
+                    Icons.AutoMirrored.Rounded.AltRoute,
                 ) { on -> controller.setProfileRouting(id, on) }
             }
             AnimatedVisibility(settings.showAdvanced, enter = RevealEnter, exit = RevealExit) {

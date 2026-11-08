@@ -417,6 +417,13 @@ class AndroidPlatform(
     override val hasVpnSettings = true
     override val vpnLockdown: Boolean? get() = TunnelBridge.lockdown
 
+    override fun openAppInfo(pkg: String) {
+        val current = activity ?: return
+        runCatching {
+            current.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", pkg, null)))
+        }
+    }
+
     override fun openVpnSettings() {
         val current = activity ?: return
         runCatching { current.startActivity(Intent(Settings.ACTION_VPN_SETTINGS)) }
@@ -516,6 +523,15 @@ class AndroidPlatform(
     }
 
     override val hasBatterySettings = true
+
+    // в Zefir X нет фоновой геолокации, без имени Wi-Fi автоправилам не на что опираться
+    override val hasWifiRules = !dev.rooni.zefir.ui.PLAY_BUILD
+
+    override val hasAutomation = true
+
+    var storeUpdates: (suspend () -> dev.rooni.zefir.app.UpdateCheck)? = null
+
+    override suspend fun checkStoreUpdate() = storeUpdates?.invoke()
 
     override val isBatteryUnrestricted: Boolean
         get() = context.getSystemService(PowerManager::class.java)?.isIgnoringBatteryOptimizations(context.packageName) == true

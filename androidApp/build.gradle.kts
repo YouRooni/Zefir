@@ -10,6 +10,9 @@ val keystoreFile = rootProject.file("keystore.properties")
 val keystore = Properties().apply { if (keystoreFile.exists()) keystoreFile.inputStream().use(::load) }
 val zefirVersionName = rootProject.extra["zefirVersionName"] as String
 val zefirVersionCode = rootProject.extra["zefirVersionCode"] as Int
+// -Pzefir.channel=play собирает Zefir X для Google Play
+val zefirChannel = (findProperty("zefir.channel") as String?) ?: "github"
+check(zefirChannel in setOf("github", "play")) { "zefir.channel: github или play" }
 
 abstract class PrepareLegal : Sync() {
     @get:OutputDirectory
@@ -37,7 +40,7 @@ android {
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.rooni.zefir"
+        applicationId = if (zefirChannel == "play") "dev.rooni.zefir.x" else "dev.rooni.zefir"
         minSdk = 26
         targetSdk = 36
         versionCode = zefirVersionCode
@@ -46,7 +49,7 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            isEnable = gradle.startParameter.taskNames.none { it.contains("bundle", ignoreCase = true) }
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             isUniversalApk = false
@@ -79,6 +82,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_21
     }
 
+    sourceSets["main"].res.directories.add("src/channel/$zefirChannel/res")
+    sourceSets["main"].kotlin.directories.add("src/channel/$zefirChannel/kotlin")
+    // манифест канала ложится поверх основного (в X без геолокации)
+    if (zefirChannel == "play") listOf("debug", "release").forEach { sourceSets[it].manifest.srcFile("src/channel/play/AndroidManifest.xml") }
     sourceSets["main"].jniLibs.directories.add("../core/prebuilt/jniLibs")
     sourceSets["main"].assets.directories.add("../core/prebuilt/geo")
 
@@ -97,4 +104,5 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.work)
     implementation(libs.serialization)
+    if (zefirChannel == "play") implementation(libs.play.update)
 }

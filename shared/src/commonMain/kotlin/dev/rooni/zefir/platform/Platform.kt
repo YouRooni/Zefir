@@ -62,6 +62,9 @@ interface Platform {
     fun setHaptics(on: Boolean) {}
     val hasHaptics: Boolean get() = true
     val hasWifiRules: Boolean get() = true
+    val hasAutomation: Boolean get() = false
+    // проверка обновлений магазином, null где магазина нет
+    suspend fun checkStoreUpdate(): dev.rooni.zefir.app.UpdateCheck? = null
 
     fun directRoute(): DirectRoute? = null
     val vpnProxy: java.net.Proxy? get() = null
@@ -112,6 +115,8 @@ interface Platform {
     val hasVpnSettings: Boolean get() = false
     val vpnLockdown: Boolean? get() = null
     fun openVpnSettings() {}
+
+    fun openAppInfo(pkg: String) {}
     fun copyGeoData() {}
 
     @Composable

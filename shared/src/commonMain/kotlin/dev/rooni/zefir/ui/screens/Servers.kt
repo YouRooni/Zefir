@@ -1,5 +1,10 @@
 package dev.rooni.zefir.ui.screens
 
+import dev.rooni.zefir.ui.onSecondaryClick
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.zIndex
+import androidx.compose.animation.animateContentSize
+import androidx.compose.ui.draw.alpha
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -24,10 +29,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.rounded.Send
-import androidx.compose.material.icons.automirrored.rounded.Sort
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -97,9 +99,7 @@ enum class ServerTag(val emojis: List<String>) {
     Warning(listOf("⚠", "❗")),
 }
 
-data class ServerName(val flag: String?, val label: String, val tags: List<ServerTag> = emptyList()) {
-    val wireless: Boolean get() = ServerTag.Wireless in tags
-}
+data class ServerName(val flag: String?, val label: String, val tags: List<ServerTag> = emptyList())
 
 private const val VARIATION = '️'
 
@@ -149,7 +149,7 @@ val ServerTag.icon: ImageVector
         ServerTag.Ai -> Icons.Rounded.SmartToy
         ServerTag.Secure -> Icons.Rounded.Lock
         ServerTag.NoAds -> Icons.Rounded.Shield
-        ServerTag.Split -> Icons.Rounded.AltRoute
+        ServerTag.Split -> Icons.AutoMirrored.Rounded.AltRoute
         ServerTag.Torrent -> Icons.Rounded.Download
         ServerTag.Multihop -> Icons.Rounded.Link
         ServerTag.Stealth -> Icons.Rounded.VisibilityOff
@@ -306,7 +306,10 @@ fun ServersScreen(controller: AppController, nav: Navigator) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             if (mode == 0) {
                                 Box(
-                                    Modifier.size(48.dp).clip(androidx.compose.foundation.shape.CircleShape).combinedClickable(
+                                    Modifier.size(48.dp).clip(androidx.compose.foundation.shape.CircleShape).onSecondaryClick {
+                                        controller.platform.haptic(Haptic.Toggle)
+                                        nav.openSetting(SettingSpots.PingMethod)
+                                    }.combinedClickable(
                                         onLongClick = {
                                             controller.platform.haptic(Haptic.Toggle)
                                             nav.openSetting(SettingSpots.PingMethod)
@@ -517,10 +520,14 @@ private fun ServerList(controller: AppController, nav: Navigator, listState: Laz
             }
         }
     }
+    // папка целиком под фильтром: зашли в неё через скрытые, внутри уже ничего не прячем
+    fun wholeHidden(group: ProxyGroup) = (hiddenTags.isNotEmpty() || hideDead) && !folderShown(group.name)
     val ordered: (ProxyGroup) -> List<String> = { group ->
+        val all = wholeHidden(group)
         val visible = group.members.filter { member ->
             when {
                 member in HIDDEN_MEMBERS -> false
+                all -> true
                 member in AppController.BUILT_IN -> true
                 member in groupNames -> folderShown(member)
                 else -> serverShown(member)
@@ -528,8 +535,16 @@ private fun ServerList(controller: AppController, nav: Navigator, listState: Laz
         }
         sortMembers(visible, settings.serverSort, settings.serverSortDesc, delays.value, pinned) { it in groupNames }
     }
+    val hiddenOf: (ProxyGroup) -> List<String> = { group ->
+        if ((hiddenTags.isEmpty() && !hideDead) || wholeHidden(group)) emptyList() else group.members.filter { member ->
+            member !in HIDDEN_MEMBERS && member !in AppController.BUILT_IN && when {
+                member in groupNames -> !folderShown(member)
+                else -> !serverShown(member)
+            }
+        }
+    }
     val hiddenBy: (ProxyGroup) -> Int = { group ->
-        if (hiddenTags.isEmpty() && !hideDead) 0 else group.members.count { member ->
+        if ((hiddenTags.isEmpty() && !hideDead) || wholeHidden(group)) 0 else group.members.count { member ->
             member !in HIDDEN_MEMBERS && member !in AppController.BUILT_IN && when {
                 member in groupNames -> !folderShown(member)
                 else -> !serverShown(member)
@@ -604,14 +619,22 @@ private fun ServerList(controller: AppController, nav: Navigator, listState: Laz
                 controller.platform.haptic(Haptic.Tick)
                 if (openable(member)) onPath(selectChain + member) else controller.selectPath(selectChain, member)
             }
-            val filterNote: @Composable () -> Unit = { FilterNote(hiddenCount, clearFilter) }
+            var peekHidden by rememberSaveable(chain) { mutableStateOf(false) }
+            val hiddenMembers = remember(group, groupNames, settled, noPings, filterKey, peekHidden) { if (peekHidden) hiddenOf(group) else emptyList() }
+            LaunchedEffect(hiddenCount) { if (hiddenCount == 0) peekHidden = false }
+            val filterNote: @Composable () -> Unit = {
+                FilterNote(hiddenCount, peekHidden, { open ->
+                    controller.platform.haptic(Haptic.Tick)
+                    peekHidden = open
+                }, clearFilter)
+            }
             val header: @Composable () -> Unit = {
                 FolderHeader(proxies, group, active) {
                     controller.platform.haptic(Haptic.Tick)
                     onPath(folderBack(chain, main.name))
                 }
             }
-            val padding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp)
+            val padding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp + LocalNavBarSpace.current)
             val folderGrid = rememberLazyGridState()
             val folderList = rememberLazyListState()
             if (chain.isNotEmpty()) {
@@ -639,6 +662,11 @@ private fun ServerList(controller: AppController, nav: Navigator, listState: Laz
                         }
                     }
                     if (hiddenCount > 0) item(key = "filtered", span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.animateItem()) { filterNote() } }
+                    items(hiddenMembers.size, key = { "h-" + hiddenMembers[it] }, contentType = { "server" }) { index ->
+                        Box(Modifier.animateItem().dimmed()) {
+                            MemberTile(controller, proxies, group, hiddenMembers[index], delays, testing, flagged, density, active, choose)
+                        }
+                    }
                 }
             } else {
                 LazyColumn(
@@ -655,6 +683,11 @@ private fun ServerList(controller: AppController, nav: Navigator, listState: Laz
                         }
                     }
                     if (hiddenCount > 0) item(key = "filtered") { Box(Modifier.animateItem()) { filterNote() } }
+                    items(hiddenMembers.size, key = { "h-" + hiddenMembers[it] }, contentType = { "server" }) { index ->
+                        Box(Modifier.animateItem().padding(top = if (index == 0) 10.dp else 0.dp).dimmed()) {
+                            MemberRow(controller, proxies, group, hiddenMembers[index], delays, testing, flagged, positionShape(index, hiddenMembers.lastIndex), active, choose)
+                        }
+                    }
                 }
             }
         }
@@ -699,13 +732,28 @@ private val FolderEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
 private fun openableType(group: ProxyGroup) = group.type == "Selector"
 
+
+private fun protocolLabel(type: String) = when (type.lowercase()) {
+    "vless" -> "VLESS"
+    "vmess" -> "VMess"
+    "trojan" -> "Trojan"
+    "shadowsocks", "ss" -> "Shadowsocks"
+    "shadowsocksr", "ssr" -> "ShadowsocksR"
+    "hysteria" -> "Hysteria"
+    "hysteria2" -> "Hysteria2"
+    "tuic" -> "TUIC"
+    "wireguard" -> "WireGuard"
+    "socks5" -> "SOCKS5"
+    "http" -> "HTTP"
+    "anytls" -> "AnyTLS"
+    else -> type
+}
+
 @Composable
-private fun FilterNote(count: Int, onShow: () -> Unit) {
-    val shape = RoundedCornerShape(20.dp)
+private fun FilterNote(count: Int, expanded: Boolean, onToggle: (Boolean) -> Unit, onReset: () -> Unit) {
+    val turn by animateFloatAsState(if (expanded) 180f else 0f, label = "filterChevron")
     Row(
-        Modifier.fillMaxWidth().padding(top = 10.dp)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
-            .padding(start = 16.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().padding(start = 14.dp, top = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Rounded.FilterAlt, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -715,14 +763,23 @@ private fun FilterNote(count: Int, onShow: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f).padding(horizontal = 10.dp),
         )
-        OutlinedButton(
-            onClick = onShow,
-            shapes = ButtonDefaults.shapes(),
-            contentPadding = PaddingValues(horizontal = 14.dp),
-            modifier = Modifier.height(36.dp),
-        ) { ButtonText(stringResource(Res.string.filter_show_all), style = MaterialTheme.typography.labelMedium) }
+        SplitButtonLayout(
+            leadingButton = {
+                SplitButtonDefaults.OutlinedLeadingButton(onClick = onReset, modifier = Modifier.height(36.dp), contentPadding = PaddingValues(start = 14.dp, end = 10.dp)) {
+                    ButtonText(stringResource(Res.string.filter_reset), style = MaterialTheme.typography.labelMedium)
+                }
+            },
+            trailingButton = {
+                SplitButtonDefaults.OutlinedTrailingButton(checked = expanded, onCheckedChange = onToggle, modifier = Modifier.height(36.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Rounded.ExpandMore, stringResource(Res.string.filter_peek), Modifier.size(20.dp).graphicsLayer { rotationZ = turn })
+                }
+            },
+        )
     }
 }
+
+// скрытые фильтром: просто бледнее, но живые (пинг, выбор, меню)
+private fun Modifier.dimmed(): Modifier = alpha(0.5f)
 
 private fun folderBack(path: List<String>, main: String): List<String> {
     val up = path.dropLast(1)
@@ -771,30 +828,40 @@ private class MemberInfo(val inner: ProxyGroup?, val parsed: ServerName, val tit
 
 @Composable
 private fun memberInfo(controller: AppController, proxies: ProxySnapshot, member: String, selected: Boolean): MemberInfo {
+    val profiles by controller.profiles.collectAsState()
+    val settings by controller.settings.collectAsState()
+    val profile = profiles.firstOrNull { it.id == settings.activeProfile }
     val inner = remember(proxies, member) { proxies.groups.firstOrNull { it.name == member } }
     val parsed = remember(member) { parseServerName(member) }
     val title = when (member) {
         AUTO_GROUP -> stringResource(Res.string.servers_auto)
+        in profile?.balancers.orEmpty() -> stringResource(Res.string.servers_auto)
         "DIRECT" -> stringResource(Res.string.rule_direct)
         "REJECT", "REJECT-DROP" -> stringResource(Res.string.rule_block)
         else -> parsed.label
     }
-    val note = remember(member, proxies) { controller.activeProfile?.serverNotes?.get(member) }
-    val via = controller.activeProfile?.chains?.get(member)
+    val note = remember(member, proxies, profile) { profile?.serverNotes?.get(member) }
+    val marked = profile?.balancers.orEmpty()
+    val balancer = member in marked
+    val balancerChild = remember(member, proxies, marked) { inner == null && proxies.groups.any { group -> member in group.members && group.members.any { it in marked } } }
+    val via = profile?.chains?.get(member)
     val viaText = via?.let { stringResource(Res.string.chain_via, parseServerName(it).label.ifBlank { it }) }
     val subtitle = when {
         viaText != null -> viaText
+        balancer -> remember(proxies, member) { proxies.resolve(member)?.takeIf { it != member }?.let { parseServerName(it).label } } ?: stringResource(Res.string.servers_auto_desc)
         note != null -> note
+        balancerChild -> proxies.nodes[member]?.type?.let(::protocolLabel)
         member == AUTO_GROUP && !selected -> stringResource(Res.string.servers_auto_desc)
         inner != null -> remember(proxies, member) { proxies.resolve(member)?.takeIf { it != member }?.let { parseServerName(it).label } }
         else -> null
     }
     val leadIcon: ImageVector? = when {
         member == AUTO_GROUP -> Icons.Rounded.AutoAwesome
+        balancer -> Icons.Rounded.AutoAwesome
         inner?.type == "URLTest" || inner?.type == "LoadBalance" -> if (parsed.flag == null) Icons.Rounded.AutoAwesome else null
         inner?.type == "Fallback" -> Icons.Rounded.Shuffle
         inner != null -> if (parsed.flag == null && parsed.tags.isEmpty()) Icons.Rounded.FolderOpen else null
-        member == "DIRECT" -> Icons.Rounded.ArrowForward
+        member == "DIRECT" -> Icons.AutoMirrored.Rounded.ArrowForward
         member == "REJECT" || member == "REJECT-DROP" -> Icons.Rounded.Block
         else -> null
     }
@@ -968,6 +1035,9 @@ private fun TagMarks(parsed: ServerName) {
     shown.forEach { Icon(it.icon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
 }
 
+private fun Modifier.memberGesture(controller: AppController, member: String, menu: MenuState, hasMenu: Boolean, onChoose: (String) -> Unit): Modifier =
+    if (hasMenu) menuGesture(menu, controller.platform, SERVER_HOLD_MILLIS).clickable { onChoose(member) } else clickable { onChoose(member) }
+
 @Composable
 private fun MemberTile(
     controller: AppController,
@@ -999,7 +1069,7 @@ private fun MemberTile(
     Surface(
         shape = shape,
         color = color,
-        modifier = Modifier.fillMaxWidth().clip(shape).then(if (hasMenu) Modifier.menuGesture(menu, controller.platform, SERVER_HOLD_MILLIS) else Modifier).clickable { onChoose(member) },
+        modifier = Modifier.fillMaxWidth().clip(shape).memberGesture(controller, member, menu, hasMenu, onChoose),
     ) {
         if (menu.used) ServerMenu(controller, member, info.title, menu)
         Column(Modifier.padding(inset), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1057,7 +1127,7 @@ private fun MemberRow(
     Surface(
         shape = shape,
         color = color,
-        modifier = Modifier.fillMaxWidth().clip(shape).then(if (hasMenu) Modifier.menuGesture(menu, controller.platform, SERVER_HOLD_MILLIS) else Modifier).clickable { onChoose(member) },
+        modifier = Modifier.fillMaxWidth().clip(shape).memberGesture(controller, member, menu, hasMenu, onChoose),
     ) {
         if (menu.used) ServerMenu(controller, member, title, menu)
         Row(
@@ -1095,13 +1165,39 @@ private fun ProfilesPage(controller: AppController, nav: Navigator) {
     val settings by controller.settings.collectAsState()
     val profiles by controller.profiles.collectAsState()
     var deleting by remember { mutableStateOf<Profile?>(null) }
-    val list = rememberLazyListState()
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = profiles.indexOfFirst { it.id == settings.activeProfile }.coerceAtLeast(0))
     var picked by remember { mutableStateOf<String?>(null) }
     var reveal by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(settings.activeProfile) { if (picked == settings.activeProfile) picked = null }
     val activeId = picked ?: settings.activeProfile
     val tints = LocalIconTints.current
     fun tintOf(profile: Profile) = tints[profiles.indexOf(profile).coerceAtLeast(0) % tints.size]
+
+    // перетаскивание по зажатию, как в редакторе главной
+    val platform = controller.platform
+    var order by remember { mutableStateOf<List<String>?>(null) }
+    val shown = order?.let { ids -> val byId = profiles.associateBy { it.id }; ids.mapNotNull { byId[it] } } ?: profiles
+
+    fun gapOf(items: List<Profile>, index: Int): Dp {
+        val afterOpen = items.getOrNull(index - 1)?.id == activeId
+        return when {
+            index == 0 -> 0.dp
+            items[index].id == activeId || afterOpen -> 12.dp
+            else -> 2.dp
+        }
+    }
+
+    // пока тащим, порядок свой, в контроллер уходит только на отпускании
+    val reorder = rememberReorderState(
+        list,
+        keys = { order ?: profiles.map { it.id } },
+        gapOf = { key -> shown.indexOfFirst { it.id == key }.takeIf { it >= 0 }?.let { gapOf(shown, it) } ?: 0.dp },
+        haptic = platform::haptic,
+        onDrop = { order?.let { ids -> if (ids != profiles.map { it.id }) controller.reorderProfiles(ids) else order = null } },
+    ) { from, to -> order = (order ?: profiles.map { it.id }).toMutableList().apply { add(to, removeAt(from)) } }
+    val dragged = reorder.dragged
+    // новый порядок из контроллера приходит не в тот же кадр, держим свой, пока не совпадёт
+    LaunchedEffect(profiles) { if (dragged == null && order == profiles.map { it.id }) order = null }
 
     fun choose(profile: Profile) {
         controller.platform.haptic(Haptic.Toggle)
@@ -1113,28 +1209,32 @@ private fun ProfilesPage(controller: AppController, nav: Navigator) {
     LazyColumn(
         Modifier.fillMaxSize(),
         state = list,
-        contentPadding = PaddingValues(16.dp),
+        userScrollEnabled = dragged == null,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 16.dp + LocalNavBarSpace.current),
     ) {
-        itemsIndexed(profiles, key = { _, it -> it.id }) { index, profile ->
+        val gaps = dragGaps(shown, shown.indexOfFirst { it.id == dragged }) { items, i -> gapOf(items, i) }
+        itemsIndexed(shown, key = { _, it -> it.id }) { index, profile ->
             val expanded = profile.id == activeId
-            val afterOpen = profiles.getOrNull(index - 1)?.id == activeId
-            val beforeOpen = profiles.getOrNull(index + 1)?.id == activeId
-            val gap by animateDpAsState(
-                when {
-                    index == 0 -> 0.dp
-                    expanded || afterOpen -> 12.dp
-                    else -> 2.dp
-                },
-                ProfileSpring,
-                label = "profileGap",
-            )
-            Box(Modifier.animateItem().padding(top = gap)) {
+            val afterOpen = shown.getOrNull(index - 1)?.id == activeId
+            val beforeOpen = shown.getOrNull(index + 1)?.id == activeId
+            val key = profile.id
+            val isDragged = dragged == key
+            val isFree = reorder.isFree(key)
+            val gap by animateDpAsState(gaps[index], DragGapSpring, label = "profileGap")
+            Box(
+                (if (isFree) Modifier else Modifier.animateItem())
+                    .zIndex(if (isFree) 1f else 0f)
+                    .padding(top = gap.coerceAtLeast(0.dp))
+                    .graphicsLayer { translationY = reorder.translation(key, gap.toPx()) }
+                    .reorderAfterLongPress(reorder, key),
+            ) {
                 ProfileItem(
                     controller,
                     profile,
                     expanded,
                     first = index == 0 || afterOpen,
-                    last = index == profiles.lastIndex || beforeOpen,
+                    last = index == shown.lastIndex || beforeOpen,
+                    lifted = isDragged,
                     tint = tintOf(profile),
                     menu = profileMenu(controller, profile, nav, !expanded) { deleting = profile },
                     reveal = reveal == profile.id,
@@ -1188,7 +1288,7 @@ private fun profileMenu(controller: AppController, profile: Profile, nav: Naviga
         if (profile.members.isNotEmpty()) add(MenuEntry(stringResource(Res.string.merge_edit), Icons.Rounded.Layers) { nav.push(Route.MergeProfiles(profile.id)) })
         add(MenuEntry(stringResource(Res.string.sub_share), Icons.Rounded.Share) { scope.launch { controller.shareProfile(profile) } })
         if (platform.canPinShortcuts) {
-            add(MenuEntry(stringResource(Res.string.sub_shortcut), Icons.Rounded.AddToHomeScreen) {
+            add(MenuEntry(stringResource(Res.string.sub_shortcut), Icons.AutoMirrored.Rounded.AddToHomeScreen) {
                 platform.pinProfileShortcut(profile.id, profile.name)
             })
         }
@@ -1221,6 +1321,14 @@ private fun RefreshButton(controller: AppController, profile: Profile) {
     }
 }
 
+private fun updatedLabel(millis: Long): String {
+    val date = java.util.Date(millis)
+    val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US).let { it.format(date) == it.format(java.util.Date()) }
+    return if (today) clockOf(millis) else java.text.SimpleDateFormat("d MMM", java.util.Locale.getDefault()).format(date)
+}
+
+private fun clockOf(millis: Long): String = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(millis))
+
 private fun daysLeft(profile: Profile): Long? =
     if (profile.expire > 0) (profile.expire - nowMillis() / 1000).floorDiv(86_400L) else null
 
@@ -1235,6 +1343,7 @@ private fun ProfileItem(
     last: Boolean,
     tint: IconTint,
     menu: List<MenuEntry>,
+    lifted: Boolean = false,
     reveal: Boolean = false,
     onRevealed: () -> Unit = {},
     onPick: () -> Unit,
@@ -1246,18 +1355,12 @@ private fun ProfileItem(
     val trafficLeft = (profile.total - profile.used).coerceAtLeast(0)
     val ended = (days != null && days < 0) || (limited && trafficLeft == 0L)
     val soon = !ended && ((days != null && days <= 3) || (limited && profile.used.toDouble() / profile.total >= 0.9))
-    val summary = when {
-        days != null && days < 0 -> stringResource(Res.string.subs_expired)
-        limited && trafficLeft == 0L -> stringResource(Res.string.subs_traffic_out)
-        else -> buildList {
-            if (days != null) add(stringResource(Res.string.subs_days_left, days.toInt()))
-            if (limited) add(formatBytes(trafficLeft))
-        }.joinToString(" · ").ifEmpty { stringResource(Res.string.servers_count, profile.servers) }
-    }
     val parsed = remember(profile.name) { parseServerName(profile.name) }
 
-    val top by animateDpAsState(if (expanded) 28.dp else if (first) 24.dp else 6.dp, ProfileSpring, label = "profileTop")
-    val bottom by animateDpAsState(if (expanded) 28.dp else if (last) 24.dp else 6.dp, ProfileSpring, label = "profileBottom")
+    val top by animateDpAsState(if (expanded) 28.dp else if (first || lifted) 24.dp else 6.dp, ProfileSpring, label = "profileTop")
+    val bottom by animateDpAsState(if (expanded) 28.dp else if (last || lifted) 24.dp else 6.dp, ProfileSpring, label = "profileBottom")
+    val lift by animateDpAsState(if (lifted) 10.dp else 0.dp, label = "profileLift")
+    val grow by animateFloatAsState(if (lifted) 1.03f else 1f, spring(0.6f, 600f), label = "profileGrow")
     val shape = RoundedCornerShape(top, top, bottom, bottom)
     val requester = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     LaunchedEffect(reveal) {
@@ -1271,23 +1374,35 @@ private fun ProfileItem(
     Surface(
         shape = shape,
         color = MaterialTheme.colorScheme.surfaceContainer,
-        modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester).clip(shape)
-            .menuGesture(state, platform, SERVER_HOLD_MILLIS)
-            .then(if (expanded) Modifier else Modifier.clickable(onClick = onPick)),
+        modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester)
+            .graphicsLayer {
+                scaleX = grow
+                scaleY = grow
+                shadowElevation = lift.toPx()
+                this.shape = shape
+                clip = false
+            }
+            .clip(shape)
+            .onGloballyPositioned { state.anchor = it }
+            .onSecondaryClick {
+                platform.haptic(Haptic.Tick)
+                state.show()
+            }
+            .then(if (expanded || lifted) Modifier else Modifier.clickable(onClick = onPick)),
     ) {
         if (state.used) MenuForState(state, menu)
         Column {
             Row(
-                Modifier.padding(start = 14.dp, end = 4.dp, top = 12.dp, bottom = 12.dp),
+                Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(tint.container),
+                    Modifier.size(40.dp).clip(RoundedCornerShape(13.dp)).background(tint.container),
                     contentAlignment = Alignment.Center,
                 ) {
                     when {
                         profile.members.isNotEmpty() -> Icon(Icons.Rounded.Layers, null, tint = tint.onContainer)
-                        parsed.flag != null -> FlagBox(parsed.flag, 44.dp, null, 14.dp)
+                        parsed.flag != null -> FlagBox(parsed.flag, 40.dp, null, 13.dp)
                         else -> Text(
                             parsed.label.firstOrNull { it.isLetterOrDigit() }?.uppercase() ?: "•",
                             style = MaterialTheme.typography.titleLargeEmphasized,
@@ -1295,37 +1410,75 @@ private fun ProfileItem(
                         )
                     }
                 }
-                Column(Modifier.weight(1f).padding(start = 14.dp, end = 4.dp)) {
-                    Text(parsed.label.ifBlank { profile.name }, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    AnimatedContent(
-                        expanded,
-                        label = "profileSubtitle",
-                        transitionSpec = { fadeIn(tween(240, 90)) togetherWith fadeOut(tween(140)) using SizeTransform(clip = false) { _, _ -> spring(dampingRatio = 1f, stiffness = 500f) } },
-                    ) { open ->
-                        if (open) {
-                            Text(stringResource(Res.string.subs_in_use), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
-                        } else {
+                Column(Modifier.weight(1f).padding(start = 12.dp, end = 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(parsed.label.ifBlank { profile.name }, style = MaterialTheme.typography.titleMediumEmphasized, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        if (profile.updatedAt > 0) {
+                            val timeAlpha by animateFloatAsState(if (expanded) 0f else 1f, tween(180), label = "profileTime")
                             Text(
-                                summary,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = when {
-                                    ended -> MaterialTheme.colorScheme.error
-                                    soon -> MaterialTheme.colorScheme.tertiary
-                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
-                                },
+                                updatedLabel(profile.updatedAt),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(start = 8.dp).graphicsLayer { alpha = timeAlpha },
                             )
                         }
                     }
+                    Box(Modifier.fillMaxWidth().animateContentSize(spring(dampingRatio = 1f, stiffness = 380f))) {
+                        androidx.compose.animation.AnimatedVisibility(expanded, enter = fadeIn(tween(200, 80)), exit = fadeOut(tween(100))) {
+                            Text(stringResource(Res.string.subs_in_use), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+                        }
+                        androidx.compose.animation.AnimatedVisibility(!expanded, enter = fadeIn(tween(200, 80)), exit = fadeOut(tween(100))) {
+                            val accent = when {
+                                ended -> MaterialTheme.colorScheme.error
+                                soon -> MaterialTheme.colorScheme.tertiary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Column {
+                                if (limited) {
+                                    LinearProgressIndicator(
+                                        progress = { (profile.used.toFloat() / profile.total).coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp).height(4.dp),
+                                        color = if (ended || soon) accent else MaterialTheme.colorScheme.primary,
+                                        drawStopIndicator = {},
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        when {
+                                            limited -> "${formatBytes(profile.used)} / ${formatBytes(profile.total)}"
+                                            profile.used > 0 -> "${formatBytes(profile.used)} · ${stringResource(Res.string.stat_unlimited)}"
+                                            else -> stringResource(Res.string.servers_count, profile.servers)
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                    val right = when {
+                                        days != null && days < 0 -> stringResource(Res.string.subs_expired)
+                                        limited && trafficLeft == 0L -> stringResource(Res.string.subs_traffic_out)
+                                        days != null -> stringResource(Res.string.subs_left_days, days.toInt())
+                                        else -> null
+                                    }
+                                    if (right != null) Text(right, style = MaterialTheme.typography.bodySmall, color = accent, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+                                }
+                            }
+                        }
+                    }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy((-10).dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     AnimatedVisibility(
                         expanded,
-                        enter = fadeIn(tween(220, 80)) + expandHorizontally(spring(dampingRatio = 1f, stiffness = 420f), expandFrom = Alignment.End),
-                        exit = fadeOut(tween(120)) + shrinkHorizontally(spring(dampingRatio = 1f, stiffness = 500f), shrinkTowards = Alignment.End),
+                        enter = fadeIn(tween(200, 80)) + expandHorizontally(spring(dampingRatio = 1f, stiffness = 380f), expandFrom = Alignment.End, clip = false),
+                        exit = fadeOut(tween(100)) + shrinkHorizontally(spring(dampingRatio = 1f, stiffness = 380f), shrinkTowards = Alignment.End, clip = false),
                     ) {
-                        RefreshButton(controller, profile)
+                        Box(Modifier.layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints)
+                            val overlap = 10.dp.roundToPx()
+                            layout((placeable.width - overlap).coerceAtLeast(0), placeable.height) { placeable.place(0, 0) }
+                        }) { RefreshButton(controller, profile) }
                     }
                     MenuButton(menu)
                 }
@@ -1338,7 +1491,7 @@ private fun ProfileItem(
                 Column(Modifier.padding(start = 14.dp, end = 14.dp, bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     SubscriptionNotices(profile)
                     SubscriptionStats(profile)
-                    SmallInfo(stringResource(Res.string.servers_count, profile.servers) + (if (profile.updatedAt > 0) " · " + stringResource(Res.string.servers_updated_at, formatDate(profile.updatedAt / 1000)) else ""))
+                    SmallInfo(stringResource(Res.string.servers_count, profile.servers) + (if (profile.updatedAt > 0) " · " + stringResource(Res.string.servers_updated_at, formatDate(profile.updatedAt / 1000) + " (" + clockOf(profile.updatedAt) + ")") else ""))
                 }
             }
         }
@@ -1418,10 +1571,10 @@ fun SubscriptionNotices(profile: Profile) {
 }
 
 @Composable
-fun SubscriptionStats(profile: Profile, flat: Boolean = false) {
+fun SubscriptionStats(profile: Profile, flat: Boolean = false, bottom: Dp = 24.dp) {
     val limited = profile.total > 0
     val color = if (flat) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surfaceContainerHighest
-    val outer = if (!flat) 12.dp else if (limited) 6.dp else 24.dp
+    val outer = if (!flat) 12.dp else if (limited) 6.dp else bottom
     val inner = if (flat) 6.dp else 4.dp
     val top = if (flat) 6.dp else outer
     Column(verticalArrangement = Arrangement.spacedBy(if (flat) 2.dp else 10.dp)) {
@@ -1453,7 +1606,7 @@ fun SubscriptionStats(profile: Profile, flat: Boolean = false) {
                 }
             }
             if (flat) {
-                Surface(shape = RoundedCornerShape(6.dp, 6.dp, 24.dp, 24.dp), color = color) {
+                Surface(shape = RoundedCornerShape(6.dp, 6.dp, bottom, bottom), color = color) {
                     Box(Modifier.fillMaxWidth().padding(16.dp)) { usage() }
                 }
             } else {

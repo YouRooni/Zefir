@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,7 +27,6 @@ import androidx.graphics.shapes.Morph
 import dev.rooni.zefir.app.AppController
 import dev.rooni.zefir.app.UpdateCheck
 import dev.rooni.zefir.app.Updates
-import androidx.compose.material.icons.automirrored.rounded.ArrowForward
 import dev.rooni.zefir.platform.Haptic
 import dev.rooni.zefir.res.*
 import dev.rooni.zefir.ui.*
@@ -46,7 +46,7 @@ fun SettingsHubScreen(controller: AppController, nav: Navigator) {
         ).map(::PolygonShape)
     }
     val tiles = buildList {
-        add(HubTile(Res.string.hub_routing, Icons.Rounded.AltRoute, Route.Basic, shapes[0]))
+        add(HubTile(Res.string.hub_routing, Icons.AutoMirrored.Rounded.AltRoute, Route.Basic, shapes[0]))
         add(HubTile(Res.string.hub_power, Icons.Rounded.PowerSettingsNew, Route.Power, shapes[1]))
         add(HubTile(Res.string.hub_subs, Icons.Rounded.Dns, Route.Subscriptions, shapes[2]))
         add(HubTile(Res.string.set_app, Icons.Rounded.Palette, Route.AppSettingsScreen, shapes[3]))
@@ -105,7 +105,7 @@ fun SettingsHubScreen(controller: AppController, nav: Navigator) {
                 modifier = Modifier.padding(top = 4.dp),
                 rows = listOf(
                     { NavRow(it, stringResource(Res.string.set_advanced), null, Icons.Rounded.Build) { nav.push(Route.Advanced) } },
-                    { NavRow(it, stringResource(Res.string.help_title), null, Icons.Rounded.HelpOutline) { nav.push(Route.Help) } },
+                    { NavRow(it, stringResource(Res.string.help_title), null, Icons.AutoMirrored.Rounded.HelpOutline) { nav.push(Route.Help) } },
                     { NavRow(it, stringResource(Res.string.set_about), null, Icons.Rounded.Info) { nav.push(Route.About) } },
                 ),
             )
@@ -242,7 +242,7 @@ private class Faq(val question: StringResource, val answer: StringResource, val 
 fun HelpScreen(controller: AppController, nav: Navigator) {
     val uri = LocalUriHandler.current
     val platform = controller.platform
-    val playBuild = APP_CHANNEL == "play"
+    val playBuild = PLAY_BUILD
     val profile = controller.activeProfile
     val sections = listOf(
         Res.string.help_sec_subs to buildList {
@@ -335,7 +335,7 @@ fun AboutScreen(controller: AppController, onBack: () -> Unit) {
     val pulse = remember { Animatable(1f) }
     val scope = rememberCoroutineScope()
     var update by remember { mutableStateOf<UpdateCheck>(UpdateCheck.Idle) }
-    val playBuild = APP_CHANNEL == "play"
+    val playBuild = PLAY_BUILD
 
     fun tap() {
         platform.haptic(Haptic.Tick)
@@ -358,12 +358,11 @@ fun AboutScreen(controller: AppController, onBack: () -> Unit) {
     fun checkUpdate() {
         val found = update
         when {
-            playBuild -> uri.openUri(Updates.PLAY_URL)
             found is UpdateCheck.Available -> uri.openUri(found.url)
             found == UpdateCheck.Checking -> Unit
             else -> scope.launch {
                 update = UpdateCheck.Checking
-                update = Updates.check(APP_VERSION)
+                update = if (playBuild) platform.checkStoreUpdate() ?: UpdateCheck.Failed else Updates.check(APP_VERSION)
                 platform.haptic(if (update is UpdateCheck.Failed) Haptic.Failed else Haptic.Toggle)
             }
         }
@@ -389,7 +388,7 @@ fun AboutScreen(controller: AppController, onBack: () -> Unit) {
                     )
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(stringResource(Res.string.app_title), style = MaterialTheme.typography.displaySmallEmphasized, textAlign = TextAlign.Center)
+                Text(APP_NAME, style = MaterialTheme.typography.displaySmallEmphasized, textAlign = TextAlign.Center)
                 Text(
                     stringResource(Res.string.about_text),
                     textAlign = TextAlign.Center,
@@ -400,15 +399,15 @@ fun AboutScreen(controller: AppController, onBack: () -> Unit) {
             }
             SectionGroup(
                 rows = listOf(
-                    { shape -> VersionRow(shape, update, playBuild, ::checkUpdate) },
-                    { LinkRow(it, stringResource(Res.string.about_author), null, Icons.Rounded.Send, "YouRooni.t.me") { uri.openUri("https://t.me/YouRooni") } },
+                    { shape -> VersionRow(shape, update, ::checkUpdate) },
+                    { LinkRow(it, stringResource(Res.string.about_author), null, Icons.AutoMirrored.Rounded.Send, "YouRooni.t.me") { uri.openUri("https://t.me/YouRooni") } },
+                    { LinkRow(it, "GitHub", null, Icons.Rounded.Code, "YouRooni/Zefir") { uri.openUri("https://github.com/YouRooni/Zefir") } },
                 ),
             )
             SectionGroup(
                 title = stringResource(Res.string.about_inside),
                 rows = listOf(
                     { LinkRow(it, stringResource(Res.string.about_core), stringResource(Res.string.about_core_desc), Icons.Rounded.Memory, "mihomo") { uri.openUri("https://github.com/MetaCubeX/mihomo") } },
-                    { LinkRow(it, "FlClash", stringResource(Res.string.about_flclash_desc), Icons.Rounded.Layers) { uri.openUri("https://github.com/chen08209/FlClash") } },
                     { LinkRow(it, stringResource(Res.string.about_license), stringResource(Res.string.about_license_desc), Icons.Rounded.Gavel, "GPL-3.0") { uri.openUri("https://www.gnu.org/licenses/gpl-3.0.html") } },
                 ),
             )
@@ -417,16 +416,14 @@ fun AboutScreen(controller: AppController, onBack: () -> Unit) {
 }
 
 @Composable
-private fun VersionRow(shape: Shape, update: UpdateCheck, playBuild: Boolean, onClick: () -> Unit) {
-    val description = when {
-        playBuild -> stringResource(Res.string.update_play)
-        else -> when (update) {
-            UpdateCheck.Idle -> stringResource(Res.string.update_tap)
-            UpdateCheck.Checking -> stringResource(Res.string.update_checking)
-            UpdateCheck.Latest -> stringResource(Res.string.update_latest)
-            UpdateCheck.Failed -> stringResource(Res.string.update_failed)
-            is UpdateCheck.Available -> stringResource(Res.string.update_available, update.version)
-        }
+private fun VersionRow(shape: Shape, update: UpdateCheck, onClick: () -> Unit) {
+    val description = when (update) {
+        UpdateCheck.Idle -> stringResource(Res.string.update_tap)
+        UpdateCheck.Checking -> stringResource(Res.string.update_checking)
+        UpdateCheck.Latest -> stringResource(Res.string.update_latest)
+        UpdateCheck.Failed -> stringResource(Res.string.update_failed)
+        // Google Play номер версии не отдаёт, только факт обновления
+        is UpdateCheck.Available -> if (update.version.isEmpty()) stringResource(Res.string.update_available_play) else stringResource(Res.string.update_available, update.version)
     }
     val available = update is UpdateCheck.Available
     SettingRow(
@@ -438,7 +435,7 @@ private fun VersionRow(shape: Shape, update: UpdateCheck, playBuild: Boolean, on
     ) {
         AnimatedContent(
             when {
-                playBuild || available -> 2
+                available -> 2
                 update == UpdateCheck.Checking -> 1
                 else -> 0
             },

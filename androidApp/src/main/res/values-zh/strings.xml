@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Zefir</string>
     <string name="tunnel_channel">VPN 运行状态</string>
-    <string name="tunnel_channel_quiet">VPN 状态（静音通知）</string>
     <string name="tunnel_on">VPN 已连接</string>
     <string name="tunnel_connecting">正在连接…</string>
     <string name="tunnel_disconnect">断开连接</string>

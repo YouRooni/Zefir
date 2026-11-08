@@ -7,6 +7,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.horizontalScroll
@@ -340,7 +341,15 @@ private fun AppRow(controller: AppController, app: InstalledApp, checked: Boolea
                 if (value == null) value = platform.loadAppIcon(app.pkg)
             }
 
-            Box(Modifier.size(40.dp)) {
+            Box(
+                Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).combinedClickable(
+                    onLongClick = {
+                        platform.haptic(Haptic.Press)
+                        platform.openAppInfo(app.pkg)
+                    },
+                    onClick = { onChange(!checked) },
+                ),
+            ) {
                 icon?.let { Image(it, null, Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp))) }
             }
             Column(Modifier.weight(1f)) {

@@ -16,7 +16,7 @@ sealed interface UpdateCheck {
 }
 
 object Updates {
-    const val PLAY_URL = "https://play.google.com/store/apps/details?id=dev.rooni.zefir"
+    const val PLAY_URL = "https://play.google.com/store/apps/details?id=dev.rooni.zefir.x"
     private const val RELEASES = "https://api.github.com/repos/YouRooni/Zefir/releases?per_page=10"
 
     private val client = OkHttpClient.Builder()

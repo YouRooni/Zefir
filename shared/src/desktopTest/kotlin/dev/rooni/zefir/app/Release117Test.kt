@@ -90,7 +90,7 @@ class Release117Test {
         assertEquals(51821, saved["port"]!!.jsonPrimitive.int)
         assertTrue("reserved" in saved)
         assertFalse("reserved" in form.withType(ManualType.Socks).toProxy())
-        assertNull(ManualServer.from(buildJsonObject { put("type", "vless"); put("network", "xhttp") }))
+        assertNull(ManualServer.from(buildJsonObject { put("type", "vless"); put("network", "quic") }))
     }
 
     @Test

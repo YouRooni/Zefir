@@ -31,7 +31,7 @@ The engine is mihomo, built through FlClash's Go wrapper. The FlClash revision i
 | --- | --- | --- |
 | Android | Generated gomobile Java/JNI bridge | Android VPN service |
 | Windows | Separate core process over a loopback socket | TUN with elevation, or system proxy |
-| Linux | Separate core process over a loopback socket | GNOME or KDE system proxy |
+| Linux | Separate core process over a loopback socket | TUN through a setuid core, GNOME or KDE system proxy |
 
 The wrapper is a dependency; Zefir's UI and application logic live in this repository.
 

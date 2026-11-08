@@ -45,7 +45,10 @@ class DesktopCore(private val binary: File) : CoreTransport() {
     var onLost: (() -> Unit)? = null
 
     fun start() {
-        if (!isWindows()) runCatching { binary.setExecutable(true) }
+        if (!isWindows()) {
+            if (!linuxPrivileged(binary)) runCatching { binary.setExecutable(true) }
+            elevated = linuxPrivileged(binary)
+        }
         val server = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())
         process = ProcessBuilder(binary.absolutePath, server.localPort.toString())
             .redirectErrorStream(true)
@@ -80,7 +83,41 @@ class DesktopCore(private val binary: File) : CoreTransport() {
         }, "core-reader").apply { isDaemon = true }.start()
     }
 
-    fun restartElevated(): Boolean {
+    fun restartElevated(): Boolean = if (isWindows()) restartWindows() else restartLinux()
+
+    private fun restartLinux(): Boolean {
+        if (!linuxPrivileged(binary) && !authorizeLinux(binary)) return false
+        if (!linuxPrivileged(binary)) return false
+        val server = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())
+        try {
+            val next = runCatching {
+                ProcessBuilder(binary.absolutePath, server.localPort.toString())
+                    .redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start()
+            }.getOrNull() ?: return false
+            server.soTimeout = 15_000
+            val accepted = runCatching { acceptOwn(server, next.pid()) }.getOrNull()
+            if (accepted == null || !runsAsRoot(next.pid())) {
+                runCatching { accepted?.close() }
+                next.destroyForcibly()
+                return false
+            }
+            val old = synchronized(writeLock) { socket.also { socket = accepted } }
+            val oldProcess = process
+            process = next
+            elevated = true
+            runCatching { old?.close() }
+            oldProcess?.destroyForcibly()
+            failPending("core restarted")
+            Thread({ readLoop(accepted) }, "core-reader").apply { isDaemon = true }.start()
+            return true
+        } finally {
+            server.close()
+        }
+    }
+
+    private fun restartWindows(): Boolean {
         val server = ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())
         try {
             val result = runCatching {
@@ -104,10 +141,10 @@ class DesktopCore(private val binary: File) : CoreTransport() {
         }
     }
 
-    private fun acceptOwn(server: ServerSocket): Socket {
+    private fun acceptOwn(server: ServerSocket, pid: Long? = process?.pid()): Socket {
         while (true) {
             val accepted = server.accept()
-            val ours = if (isWindows()) connectionFrom(accepted, binary) else linuxConnectionFrom(accepted, process?.pid())
+            val ours = if (isWindows()) connectionFrom(accepted, binary) else linuxConnectionFrom(accepted, pid)
             if (ours != false) return accepted
             runCatching { accepted.close() }
         }
@@ -200,6 +237,38 @@ internal fun linuxConnectionFrom(socket: Socket, pid: Long?): Boolean? = runCatc
     val fds = File("/proc/$pid/fd").listFiles() ?: return null
     fds.any { runCatching { java.nio.file.Files.readSymbolicLink(it.toPath()).toString() == "socket:[$inode]" }.getOrDefault(false) }
 }.getOrNull()
+
+internal fun linuxPrivileged(binary: File): Boolean = runCatching {
+    val path = binary.toPath()
+    val uid = java.nio.file.Files.getAttribute(path, "unix:uid") as Int
+    val mode = java.nio.file.Files.getAttribute(path, "unix:mode") as Int
+    uid == 0 && (mode and 0x800) != 0
+}.getOrDefault(false)
+
+private fun runsAsRoot(pid: Long): Boolean = runCatching {
+    val line = File("/proc/$pid/status").readLines().first { it.startsWith("Uid:") }
+    line.split(Regex("\\s+")).getOrNull(2) == "0"
+}.getOrDefault(false)
+
+internal fun linuxAuthorizeScript(path: String): String {
+    val quoted = "'" + path.replace("'", "'\\''") + "'"
+    return "group=\$(id -g \"\${PKEXEC_UID:-\$SUDO_UID}\") && chown \"root:\$group\" $quoted && chmod 4750 $quoted"
+}
+
+private fun authorizeLinux(binary: File): Boolean {
+    val command = listOf("/bin/sh", "-c", linuxAuthorizeScript(binary.canonicalPath))
+    fun exec(vararg prefix: String): Int? = runCatching {
+        ProcessBuilder(*prefix, *command.toTypedArray())
+            .redirectErrorStream(true)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .start()
+            .waitFor()
+    }.getOrNull()
+    val pkexec = exec("pkexec")
+    if (pkexec == 0) return true
+    if (pkexec == 126) return false
+    return exec("sudo", "-n", "--") == 0
+}
 
 private interface Shell32 : Library {
     fun ShellExecuteW(hwnd: Pointer?, operation: WString, file: WString, parameters: WString, directory: WString, show: Int): Long
@@ -392,6 +461,66 @@ private fun runCommand(vararg command: String): String = runCatching {
     process.inputStream.bufferedReader().readText().also { process.waitFor() }
 }.getOrDefault("")
 
+private fun readLinuxAccent(): Long? {
+    portalAccent()?.let { return it }
+    kdeAccent()?.let { return it }
+    gnomeAccent()?.let { return it }
+    return gtkAccent()
+}
+
+private fun gtkAccent(): Long? = runCatching {
+    val config = System.getenv("XDG_CONFIG_HOME")?.takeIf { it.startsWith("/") } ?: "${System.getProperty("user.home")}/.config"
+    val pattern = Regex("@define-color\\s+(accent_bg_color|accent_color|theme_selected_bg_color)\\s+#([0-9a-fA-F]{6})")
+    listOf("gtk-4.0/gtk.css", "gtk-3.0/gtk.css").forEach { name ->
+        val file = File(config, name).takeIf { it.canRead() && it.length() < 512 * 1024 } ?: return@forEach
+        val found = pattern.findAll(file.readText()).associate { it.groupValues[1] to it.groupValues[2] }
+        val hex = found["accent_bg_color"] ?: found["accent_color"] ?: found["theme_selected_bg_color"] ?: return@forEach
+        return 0xFF000000 or hex.toLong(16)
+    }
+    null
+}.getOrNull()
+
+private fun rgb(r: Int, g: Int, b: Int): Long = 0xFF000000 or (r.toLong() shl 16) or (g.toLong() shl 8) or b.toLong()
+
+private fun portalAccent(): Long? = runCatching {
+    val out = runCommand(
+        "gdbus", "call", "--session", "--timeout", "2",
+        "--dest", "org.freedesktop.portal.Desktop",
+        "--object-path", "/org/freedesktop/portal/desktop",
+        "--method", "org.freedesktop.portal.Settings.ReadOne",
+        "org.freedesktop.appearance", "accent-color",
+    )
+    val parts = Regex("\\(([0-9.eE+-]+),\\s*([0-9.eE+-]+),\\s*([0-9.eE+-]+)\\)").find(out)?.groupValues?.drop(1)?.map { it.toDouble() } ?: return null
+    if (parts.any { it < 0.0 || it > 1.0 }) return null
+    rgb((parts[0] * 255).toInt(), (parts[1] * 255).toInt(), (parts[2] * 255).toInt())
+}.getOrNull()
+
+private fun kdeAccent(): Long? = runCatching {
+    if (!System.getenv("XDG_CURRENT_DESKTOP").orEmpty().contains("KDE", true)) return null
+    val file = File(System.getProperty("user.home"), ".config/kdeglobals").takeIf { it.canRead() } ?: return null
+    var group = ""
+    file.readLines().forEach { raw ->
+        val line = raw.trim()
+        if (line.startsWith("[")) group = line
+        else if (group == "[General]" && line.startsWith("AccentColor=")) {
+            val (r, g, b) = line.substringAfter('=').split(',').map { it.trim().toInt() }
+            return rgb(r, g, b)
+        }
+    }
+    null
+}.getOrNull()
+
+private val GNOME_ACCENTS = mapOf(
+    "blue" to rgb(0x35, 0x84, 0xE4), "teal" to rgb(0x21, 0x90, 0xA4), "green" to rgb(0x3A, 0x94, 0x4A),
+    "yellow" to rgb(0xC8, 0x88, 0x00), "orange" to rgb(0xED, 0x5B, 0x00), "red" to rgb(0xE6, 0x2D, 0x42),
+    "pink" to rgb(0xD5, 0x61, 0x99), "purple" to rgb(0x91, 0x41, 0xAC), "slate" to rgb(0x6F, 0x83, 0x96),
+)
+
+private fun gnomeAccent(): Long? = runCatching {
+    val name = runCommand("gsettings", "get", "org.gnome.desktop.interface", "accent-color").trim().trim('\'')
+    GNOME_ACCENTS[name]
+}.getOrNull()
+
 private fun readWindowsAccent(): Long? = runCatching {
     val line = runCommand("reg", "query", "HKCU\\Software\\Microsoft\\Windows\\DWM", "/v", "AccentColor")
         .lineSequence().first { it.trim().startsWith("AccentColor") }
@@ -405,7 +534,7 @@ class DesktopPlatform(override val dataDir: String, private val coreDir: File) :
     private val dwm by lazy { runCatching { Native.load("dwmapi", Dwm::class.java) }.getOrNull() }
     private var window: Pointer? = null
     private var windowColors: Pair<Int, Int>? = null
-    private val accent = MutableStateFlow(if (isWindows) readWindowsAccent() else null)
+    private val accent = MutableStateFlow(if (isWindows) readWindowsAccent() else readLinuxAccent())
 
     fun attachWindow(handle: Long) {
         window = Pointer(handle)
@@ -413,13 +542,13 @@ class DesktopPlatform(override val dataDir: String, private val coreDir: File) :
     }
 
     fun refreshAccent() {
-        if (isWindows) Thread { accent.value = readWindowsAccent() }.apply { isDaemon = true }.start()
+        Thread { accent.value = if (isWindows) readWindowsAccent() else readLinuxAccent() }.apply { isDaemon = true }.start()
     }
 
     private val _windowIcon = MutableStateFlow(Color.Unspecified)
     val windowIcon: StateFlow<Color> = _windowIcon
     override val hasNotificationSettings = false
-    override val tunInConfig get() = isWindows && tunWanted && transport.elevated
+    override val tunInConfig get() = tunWanted && transport.elevated
     override val vpnProxy: java.net.Proxy?
         get() = if (engine.state.value == TunnelState.On) java.net.Proxy(java.net.Proxy.Type.HTTP, java.net.InetSocketAddress("127.0.0.1", proxyPort)) else null
 
@@ -430,8 +559,8 @@ class DesktopPlatform(override val dataDir: String, private val coreDir: File) :
     @Volatile private var tunDeclined = false
 
     override val isDesktop = true
-    override val hasDesktopTun get() = isWindows
-    override val hasCustomFrame get() = isWindows
+    override val hasDesktopTun get() = true
+    override val hasCustomFrame get() = true
     override val desktopOsName get() = if (isWindows) "" else "Linux"
     override val hasHaptics = false
     override val hasWifiRules = false
@@ -512,7 +641,7 @@ class DesktopPlatform(override val dataDir: String, private val coreDir: File) :
             }
         }
 
-        override fun hasPermission() = !isWindows || !tunWanted || proxyOnly || transport.elevated
+        override fun hasPermission() = !tunWanted || proxyOnly || transport.elevated
 
         override suspend fun ensurePermission(): Boolean = withContext(Dispatchers.IO) {
             if (hasPermission()) return@withContext true

@@ -14,7 +14,7 @@ Exec="$DIR/bin/Zefir" %u
 Icon=zefir
 Terminal=false
 Categories=Network;
-StartupWMClass=dev-rooni-zefir-MainKt
+StartupWMClass=zefir
 EOF
 command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database "$APPS" || true
 echo "Zefir: $APPS/zefir.desktop"

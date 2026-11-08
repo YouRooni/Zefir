@@ -1,8 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Zefir</string>
     <string name="tunnel_channel">Стан VPN</string>
-    <string name="tunnel_channel_quiet">Стан VPN (приховане)</string>
     <string name="tunnel_on">VPN увімкнено</string>
     <string name="tunnel_connecting">Підключаємося…</string>
     <string name="tunnel_disconnect">Відключити</string>

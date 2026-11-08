@@ -14,6 +14,7 @@ import dev.rooni.zefir.res.home_failed
 import org.jetbrains.compose.resources.getString
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import dev.rooni.zefir.platform.AndroidPlatform
 import dev.rooni.zefir.platform.TunnelBridge
@@ -35,6 +36,7 @@ class ZefirApp : Application() {
             startService(Intent(this, TunnelService::class.java).setAction(TunnelService.ACTION_STOP))
         }
         platform = AndroidPlatform(this)
+        platform.storeUpdates = storeUpdates(this)
         platform.setWatchService = { on ->
             val intent = Intent(this, WatchService::class.java)
             runCatching { if (on) startForegroundService(intent) else stopService(intent) }
@@ -49,6 +51,7 @@ class ZefirApp : Application() {
             controller.profiles.map { list -> list.map { it.id to it.name } }.distinctUntilChanged().collect(platform::updateShortcuts)
         }
         watchErrors()
+        watchAutomationEvents()
         appScope.launch {
             kotlinx.coroutines.flow.combine(TunnelBridge.state, TunnelBridge.server, controller.profiles, controller.settings, controller.connectedAt) { state, server, profiles, settings, since ->
                 listOf(state, server, since, settings.activeProfile, profiles.firstOrNull { it.id == settings.activeProfile }?.let { it.name to it.expire })
@@ -57,6 +60,17 @@ class ZefirApp : Application() {
                     QuickTile.refresh(this@ZefirApp)
                     ServerWidget.refreshAll(this@ZefirApp)
                 }
+        }
+    }
+
+    // события для Tasker и компании: включился, выключился, сменился сервер или подписка
+    private fun watchAutomationEvents() {
+        appScope.launch {
+            kotlinx.coroutines.flow.combine(controller.tunnel, controller.proxies, controller.settings) { state, proxies, settings ->
+                Triple(AutomationReceiver.stateName(state), proxies.resolve(proxies.main?.name), settings.activeProfile)
+            }.distinctUntilChanged().drop(1).collect { (state, server, profile) ->
+                if (controller.settings.value.automation) AutomationReceiver.sendEvent(this@ZefirApp, state, server, profile)
+            }
         }
     }
 

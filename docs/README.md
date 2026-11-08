@@ -5,6 +5,7 @@
 | Guide | Contents |
 | --- | --- |
 | [Installation and troubleshooting](USAGE.md) | Packages, first connection, local data and common problems |
+| [Automation](AUTOMATION.md) | Commands for Tasker, MacroDroid, adb and scripts |
 | [Privacy](PRIVACY.md) | Stored data, network requests and permissions |
 | [Security](../SECURITY.md) | Reporting vulnerabilities privately |
 

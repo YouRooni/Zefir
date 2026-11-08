@@ -22,7 +22,7 @@ Use your own servers or subscriptions. Zefir handles the connection, server sele
 
 - **Import:** Clash YAML, Base64 subscriptions, server links and WireGuard / AmneziaWG configuration files.
 - **Connect:** profiles, server selection and latency checks, with VLESS, VMess, Trojan, Shadowsocks, Hysteria, Hysteria 2, TUIC, WireGuard and AmneziaWG through mihomo.
-- **Route:** DNS settings and routing rules, per-app routing on Android, TUN and system proxy on Windows, system proxy on Linux.
+- **Route:** DNS settings and routing rules, per-app routing on Android, TUN and system proxy on Windows and Linux.
 - **Inspect:** active connections, traffic, logs and network diagnostics. Export and restore your configuration.
 
 Available in English, Russian, Simplified Chinese, Ukrainian and Belarusian.

@@ -115,6 +115,8 @@ private val DnsIds = AtomicLong()
 
 data class RouteProbe(val chains: List<String>, val rule: String, val payload: String, val error: String?)
 
+private const val DELAY_TIMEOUT = 5000
+
 class CoreApi(private val transport: CoreTransport) {
     fun onLog(listener: (LogLine) -> Unit) { transport.onLog = listener }
 
@@ -219,9 +221,10 @@ class CoreApi(private val transport: CoreTransport) {
         val result = transport.call("asyncTestDelay", buildJsonObject {
             put("proxy-name", name)
             put("test-url", url)
-            put("timeout", 5000)
+            put("timeout", DELAY_TIMEOUT)
         }) as? JsonObject ?: return -1
-        return result["value"]?.jsonPrimitive?.intOrNull ?: -1
+        val value = result["value"]?.jsonPrimitive?.intOrNull ?: return -1
+        return if (value > DELAY_TIMEOUT) -1 else value
     }
 
     suspend fun connections(): JsonArray {

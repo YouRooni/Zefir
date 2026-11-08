@@ -854,6 +854,7 @@ fun SubScreen(
             label = "barColor",
         )
         val colors = TopAppBarDefaults.topAppBarColors(containerColor = barColor, scrolledContainerColor = barColor)
+        CaptionColor { barColor }
         val navIcon: @Composable () -> Unit = {
             if (onBack != null) {
                 IconButton(onClick = onBack) {
@@ -923,7 +924,7 @@ fun Modifier.edgeFade(scroll: androidx.compose.foundation.ScrollState, width: Dp
 
 @Composable
 fun ScrollColumn(modifier: Modifier = Modifier, scroll: androidx.compose.foundation.ScrollState = rememberScrollState(), content: @Composable () -> Unit) {
-    GapColumn(modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp).navigationBarsPadding(), content = content)
+    GapColumn(modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp).navigationBarsPadding().padding(bottom = LocalNavBarSpace.current), content = content)
 }
 
 private fun cyrillicUnits() = java.util.Locale.getDefault().language in setOf("ru", "uk", "be")

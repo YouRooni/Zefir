@@ -16,7 +16,10 @@ val generateAppVersion = tasks.register("generateAppVersion") {
     doLast {
         destination.get().file("dev/rooni/zefir/ui/AppVersion.kt").asFile.apply {
             parentFile.mkdirs()
-            writeText("package dev.rooni.zefir.ui\n\nconst val APP_VERSION = \"$zefirVersionName\"\nconst val APP_CHANNEL = \"$zefirChannel\"\n")
+            // play = Zefir X для Google Play: без подмены устройства
+            val play = zefirChannel == "play"
+            val name = if (play) "Zefir X" else "Zefir"
+            writeText("package dev.rooni.zefir.ui\n\nconst val APP_VERSION = \"$zefirVersionName\"\nconst val APP_CHANNEL = \"$zefirChannel\"\nconst val APP_NAME = \"$name\"\nconst val PLAY_BUILD = $play\n")
         }
     }
 }

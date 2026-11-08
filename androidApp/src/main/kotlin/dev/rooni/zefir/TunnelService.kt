@@ -38,7 +38,6 @@ class TunnelService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         TunnelBridge.serviceAlive.value = true
-        getSystemService(NotificationManager::class.java).deleteNotificationChannel(CHANNEL_QUIET)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -303,7 +302,6 @@ class TunnelService : VpnService() {
         const val ACTION_RESUME = "dev.rooni.zefir.RESUME"
         private const val TAG = "TunnelService"
         private const val CHANNEL = "tunnel"
-        private const val CHANNEL_QUIET = "tunnel_quiet"
         private const val NOTIFICATION_ID = 7
         private const val IPV4_ADDRESS = "198.18.0.1"
         private const val IPV6_ADDRESS = "fdfe:dcba:9876::1"

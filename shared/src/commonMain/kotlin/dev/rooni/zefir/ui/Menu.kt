@@ -27,6 +27,8 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.pointer.isSecondaryPressed
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.backhandler.PredictiveBackHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -251,8 +253,36 @@ class MenuState {
 @Composable
 fun rememberMenuState() = remember { MenuState() }
 
+private object SecondaryClaim {
+    var owner: Any? = null
+}
+
+fun Modifier.onSecondaryClick(action: () -> Unit): Modifier = pointerInput(Unit) {
+    val token = Any()
+    awaitEachGesture {
+        val event = awaitPointerEvent(PointerEventPass.Initial)
+        if (event.type != PointerEventType.Press || !event.buttons.isSecondaryPressed) return@awaitEachGesture
+        event.changes.forEach { it.consume() }
+        SecondaryClaim.owner = token
+        val settled = awaitPointerEvent(PointerEventPass.Final)
+        if (SecondaryClaim.owner === token) {
+            SecondaryClaim.owner = null
+            action()
+        }
+        if (settled.changes.none { it.pressed }) return@awaitEachGesture
+        while (true) {
+            val next = awaitPointerEvent(PointerEventPass.Initial)
+            next.changes.forEach { it.consume() }
+            if (next.changes.none { it.pressed }) break
+        }
+    }
+}
+
 fun Modifier.menuGesture(state: MenuState, platform: Platform, holdMillis: Long = HOLD_MILLIS, tapOpens: Boolean = false, source: MutableInteractionSource? = null): Modifier =
-    onGloballyPositioned { state.anchor = it }.pointerInput(state) {
+    onGloballyPositioned { state.anchor = it }.onSecondaryClick {
+        platform.haptic(Haptic.Tick)
+        state.show()
+    }.pointerInput(state) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             val stamp = Triple(down.id, down.uptimeMillis, down.position + (state.anchor?.let { if (it.isAttached) it.positionInRoot() else null } ?: Offset.Zero))

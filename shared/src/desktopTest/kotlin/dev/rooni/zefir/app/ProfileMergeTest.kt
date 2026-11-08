@@ -64,7 +64,7 @@ class ProfileMergeTest {
             proxy-providers:
               p: {type: http, health-check: {enable: true, interval: 60}}
         """.trimIndent()
-        val root = Json.parseToJsonElement(tuneHealthChecks(text, 600)!!).jsonObject
+        val root = Json.parseToJsonElement(tuneProfile(text, 600, emptyMap())!!).jsonObject
         val intervals = root.getValue("proxy-groups").jsonArray.map { it.jsonObject["interval"]?.jsonPrimitive?.content }
         assertEquals(listOf("600", "900", null), intervals)
         assertEquals("600", root.getValue("proxy-providers").jsonObject.getValue("p").jsonObject.getValue("health-check").jsonObject.getValue("interval").jsonPrimitive.content)
@@ -72,8 +72,8 @@ class ProfileMergeTest {
 
     @Test
     fun leavesFineConfigsAlone() {
-        assertNull(tuneHealthChecks("proxy-groups:\n  - {name: a, type: url-test, interval: 900}", 600))
-        assertNull(tuneHealthChecks("not: [valid", 600))
+        assertNull(tuneProfile("proxy-groups:\n  - {name: a, type: url-test, interval: 900}", 600, emptyMap()))
+        assertNull(tuneProfile("not: [valid", 600, emptyMap()))
     }
 
     @Test

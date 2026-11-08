@@ -58,8 +58,6 @@ private fun yamlToJson(value: Any?): JsonElement = when (value) {
     else -> JsonPrimitive(value.toString())
 }
 
-fun tuneHealthChecks(config: String, minInterval: Int): String? = tuneProfile(config, minInterval, emptyMap())
-
 private val NO_TFO_TYPES = setOf("hysteria", "hysteria2", "tuic", "wireguard", "direct", "dns")
 
 fun tuneProfile(config: String, minInterval: Int?, chains: Map<String, String>, fastOpen: Boolean = false): String? {

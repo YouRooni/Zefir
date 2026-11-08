@@ -10,21 +10,27 @@ import dev.rooni.zefir.res.servers_default_name
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.get
 import io.ktor.client.request.header
-import io.ktor.client.statement.HttpResponse
-import io.ktor.client.statement.bodyAsText
+import io.ktor.client.request.prepareGet
+import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.Headers
+import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
+import io.ktor.utils.io.readRemaining
+import kotlinx.coroutines.CancellationException
+import kotlinx.io.readByteArray
 import kotlinx.serialization.json.*
 import org.jetbrains.compose.resources.getString
 import java.net.URLDecoder
 import java.util.UUID
 
-enum class ImportError { Empty, Network, Unsupported, NoServers, Blocked }
+enum class ImportError { Empty, Network, Unsupported, NoServers, Blocked, TooLarge }
 
 class ImportException(val reason: ImportError, detail: String? = null) : Exception(detail ?: reason.name)
 
 const val AUTO_GROUP = "Auto"
+
+private const val MAX_BODY = 32L * 1024 * 1024
 const val SERVERS_GROUP = "Servers"
 
 class ProfileImporter(
@@ -78,18 +84,18 @@ class ProfileImporter(
         val custom = customClient ?: previous?.customClient
         val notes = mutableMapOf<String, String>()
         val serverLinks = mutableMapOf<String, String>()
+        val balancers = mutableSetOf<String>()
         val fetched = if (isUrl) {
-            fetchWorking(input, choice, custom, previous, notes, serverLinks)
+            fetchWorking(input, choice, custom, previous, notes, serverLinks, balancers)
         } else {
             val text = plainBody(input)
-            Fetched(null, text, toConfig(text, notes, serverLinks), null)
+            Fetched(null, text, toConfig(text, notes, serverLinks, balancers), null)
         }
-        val response = fetched.response
         val text = fetched.text
         val config = fetched.config
-        val headers = response?.headers
+        val headers = fetched.headers
         val meta = parseSubscriptionMeta({ headers?.get(it) }, text)
-        if (name == null) name = meta.title ?: response?.let { titleFrom(it) } ?: if (isUrl) hostOf(input) else meta.title
+        if (name == null) name = meta.title ?: headers?.let { titleFrom(it) } ?: if (isUrl) hostOf(input) else meta.title
         val target = pathOf(id)
         val temp = "$target.new"
         Fs.writeText(temp, config)
@@ -121,6 +127,7 @@ class ProfileImporter(
             pinned = previous?.pinned.orEmpty(),
             hiddenTags = previous?.hiddenTags.orEmpty(),
             hideDead = previous?.hideDead ?: false,
+            balancers = balancers,
             chains = previous?.chains.orEmpty(),
             updateHours = meta.updateHours,
             supportUrl = meta.supportUrl,
@@ -184,9 +191,11 @@ class ProfileImporter(
     private fun replaceDomain(url: String, domain: String) =
         url.substringBefore("://") + "://" + domain + url.substringAfter("://").let { rest -> if ('/' in rest) "/" + rest.substringAfter('/') else "" }
 
-    private class Fetched(val response: HttpResponse?, val text: String, val config: String, val workingClient: String?)
+    private class Fetched(val headers: Headers?, val text: String, val config: String, val workingClient: String?)
 
-    private suspend fun fetchWorking(url: String, choice: String, custom: String?, previous: Profile?, notes: MutableMap<String, String>, serverLinks: MutableMap<String, String>): Fetched {
+    private class Download(val headers: Headers, val body: String)
+
+    private suspend fun fetchWorking(url: String, choice: String, custom: String?, previous: Profile?, notes: MutableMap<String, String>, serverLinks: MutableMap<String, String>, balancers: MutableSet<String>): Fetched {
         val selected = SubscriptionClient.of(choice)
         val tries = when (selected) {
             SubscriptionClient.Auto -> {
@@ -210,36 +219,52 @@ class ProfileImporter(
                         continue
                     }
                 }
-                val text = plainBody(response.bodyAsText())
+                val text = plainBody(response.body)
                 notes.clear()
                 serverLinks.clear()
-                return Fetched(response, text, toConfig(text, notes, serverLinks), attempt.id)
+                balancers.clear()
+                return Fetched(response.headers, text, toConfig(text, notes, serverLinks, balancers), attempt.id)
             } catch (e: ImportException) {
-                if (e.reason == ImportError.Network) throw e
+                if (e.reason == ImportError.Network || e.reason == ImportError.TooLarge) throw e
                 failure = e
             }
         }
         throw failure ?: ImportException(ImportError.Blocked)
     }
 
-    private suspend fun fetch(url: String, userAgent: String): HttpResponse {
+    private suspend fun fetch(url: String, userAgent: String): Download {
         directClient()?.let { client ->
-            runCatching { return request(client, url, userAgent) }
+            try {
+                return request(client, url, userAgent)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ImportException) {
+                // слишком большой ответ через другой маршрут меньше не станет
+                if (e.reason == ImportError.TooLarge) throw e
+            } catch (_: Exception) {
+            }
         }
         return request(http, url, userAgent)
     }
 
-    private suspend fun request(client: HttpClient, url: String, userAgent: String): HttpResponse {
-        val response = try {
-            client.get(url) {
-                header("User-Agent", userAgent)
-                deviceHeaders().forEach { (name, value) -> header(name, value) }
-            }
-        } catch (e: Exception) {
-            throw ImportException(ImportError.Network, e.message)
+    // тело читаем потоком с потолком, чтобы кривой или злой сервер не съел всю память
+    private suspend fun request(client: HttpClient, url: String, userAgent: String): Download = try {
+        client.prepareGet(url) {
+            header("User-Agent", userAgent)
+            deviceHeaders().forEach { (name, value) -> header(name, value) }
+        }.execute { response ->
+            if (!response.status.isSuccess()) throw ImportException(ImportError.Network, "HTTP ${response.status.value}")
+            if ((response.contentLength() ?: 0) > MAX_BODY) throw ImportException(ImportError.TooLarge, "subscription is larger than ${MAX_BODY shr 20} MB")
+            val bytes = response.bodyAsChannel().readRemaining(MAX_BODY + 1).readByteArray()
+            if (bytes.size > MAX_BODY) throw ImportException(ImportError.TooLarge, "subscription is larger than ${MAX_BODY shr 20} MB")
+            Download(response.headers, bytes.decodeToString())
         }
-        if (!response.status.isSuccess()) throw ImportException(ImportError.Network, "HTTP ${response.status.value}")
-        return response
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: ImportException) {
+        throw e
+    } catch (e: Exception) {
+        throw ImportException(ImportError.Network, e.message)
     }
 
     private fun plainBody(body: String): String {
@@ -248,7 +273,7 @@ class ProfileImporter(
         return runCatching { decodeBase64(text) }.getOrDefault(text)
     }
 
-    private suspend fun toConfig(text: String, notes: MutableMap<String, String>, serverLinks: MutableMap<String, String>): String {
+    private suspend fun toConfig(text: String, notes: MutableMap<String, String>, serverLinks: MutableMap<String, String>, balancers: MutableSet<String> = mutableSetOf()): String {
         if (text.startsWith("<")) throw ImportException(ImportError.Blocked, "html page")
         if (looksLikeClash(text)) return text
         if (isWireguardConf(text)) return generatedConfig(listOf(GeneratedEntry(parseWireguardConf(text) ?: throw ImportException(ImportError.Unsupported))))
@@ -263,7 +288,7 @@ class ProfileImporter(
             servers.forEach { server ->
                 if (server.description != null) notes[server.name] = server.description
             }
-            return generatedConfig(servers.map { GeneratedEntry(it.proxy, it.members, it.balancer) })
+            return generatedConfig(servers.map { GeneratedEntry(it.proxy, it.members, it.balancer) }, balancers)
         }
         val links = decodeLines(text).map(::cleanShareLink)
         links.forEach { link -> if (link.name != null && link.description != null) notes[link.name] = link.description }
@@ -293,7 +318,7 @@ class ProfileImporter(
 
     private class GeneratedEntry(val proxy: JsonObject, val members: List<JsonObject> = emptyList(), val balancer: XrayBalancer? = null)
 
-    private fun generatedConfig(entries: List<GeneratedEntry>): String {
+    private fun generatedConfig(entries: List<GeneratedEntry>, balancers: MutableSet<String> = mutableSetOf()): String {
         val seen = mutableSetOf(AUTO_GROUP, SERVERS_GROUP)
         fun unique(raw: String?): String {
             var name = raw?.ifBlank { null } ?: "Server"
@@ -313,11 +338,18 @@ class ProfileImporter(
                 listed += name
                 return@forEach
             }
-            val group = unique(entry.proxy["name"]?.jsonPrimitive?.contentOrNull)
+            val folder = unique(entry.proxy["name"]?.jsonPrimitive?.contentOrNull)
+            val group = unique("$folder [auto]")
             val inner = entry.members.map { member ->
                 unique(member["name"]?.jsonPrimitive?.contentOrNull).also { proxies += JsonObject(member + ("name" to JsonPrimitive(it))) }
             }
-            listed += group
+            listed += folder
+            balancers += group
+            groups += buildJsonObject {
+                put("name", folder)
+                put("type", "select")
+                put("proxies", JsonArray((listOf(group) + inner).map(::JsonPrimitive)))
+            }
             groups += buildJsonObject {
                 put("name", group)
                 put("type", rule.type)
@@ -351,15 +383,15 @@ class ProfileImporter(
         }.toString()
     }
 
-    private fun titleFrom(response: HttpResponse): String? {
-        response.headers["profile-title"]?.let { raw ->
+    private fun titleFrom(headers: Headers): String? {
+        headers["profile-title"]?.let { raw ->
             val value = raw.trim()
             if (value.startsWith("base64:")) {
                 return runCatching { decodeBase64(value.removePrefix("base64:")) }.getOrNull()
             }
             if (value.isNotEmpty()) return value
         }
-        val disposition = response.headers["content-disposition"] ?: return null
+        val disposition = headers["content-disposition"] ?: return null
         val match = Regex("filename\\*?=(?:UTF-8'')?\"?([^\";]+)").find(disposition) ?: return null
         return runCatching { URLDecoder.decode(match.groupValues[1], "UTF-8") }.getOrNull()
             ?.removeSuffix(".yaml")?.removeSuffix(".yml")?.ifBlank { null }

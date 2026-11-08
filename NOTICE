@@ -40,7 +40,8 @@ Commons flag artwork. Packaged in shared/src/commonMain/composeResources/files/f
 
 Libraries
 Kotlin, Compose Multiplatform, AndroidX, kotlinx.coroutines,
-kotlinx.serialization, Ktor, MaterialKolor, Qr Rose, SnakeYAML and JNA are
+kotlinx.serialization, Ktor, MaterialKolor, Qr Rose, SnakeYAML, JNA and
+ComposeNativeTray (Linux tray, MIT, licenses/ComposeNativeTray-LICENSE) are
 resolved by Gradle; versions are declared in gradle/libs.versions.toml.
 Their license and attribution files remain in the dependency artifacts.
 Google ML Kit and Google Play services components are subject to Google's

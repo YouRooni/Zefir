@@ -17,7 +17,7 @@ Pre-built packages are available in [Releases](https://github.com/YouRooni/Zefir
 | `windows-x64-setup.exe` | Windows installer, when included in a release |
 | `linux-x64.tar.gz` | Linux x64; no separate Java installation needed |
 
-Android requires version 8.0 or later. ARMv7 has not yet been tested on a physical device. Windows binaries are not code-signed. Linux builds support system proxy mode only, without TUN. macOS and iOS are not supported.
+Android requires version 8.0 or later. ARMv7 has not yet been tested on a physical device. Windows binaries are not code-signed. On Linux, the first TUN start asks for an administrator password to give the core the rights it needs. macOS and iOS are not supported.
 
 ## First connection
 

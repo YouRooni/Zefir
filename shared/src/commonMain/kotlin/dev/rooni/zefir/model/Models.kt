@@ -37,6 +37,7 @@ data class Profile(
     val members: List<String> = emptyList(),
     val manual: Boolean = false,
     val chains: Map<String, String> = emptyMap(),
+    val balancers: Set<String> = emptySet(),
 )
 
 @Serializable
@@ -52,7 +53,7 @@ enum class ThemeMode { System, Light, Dark }
 enum class DnsMode { FromProfile, Secure, Custom }
 
 @Serializable
-enum class HomeWidget { Server, Subscription, Mode, Speed, Traffic, SplitApps, ExitIp }
+enum class HomeWidget { Server, Subscription, Mode, Speed, Session, Traffic, SplitApps, ExitIp, Divider }
 
 @Serializable
 enum class RuleAction { Direct, Proxy, Block }
@@ -88,6 +89,8 @@ data class AppSettings(
     val dynamicColor: Boolean = true,
     val railExpanded: Boolean = false,
     val haptics: Boolean = true,
+    val noAnimations: Boolean = false,
+    val floatingNav: Boolean = false,
     val detailedErrors: Boolean = false,
     val autoSwitch: Boolean = false,
 
@@ -101,7 +104,8 @@ data class AppSettings(
     val serverSort: ServerSort = ServerSort.Default,
     val serverSortDesc: Boolean = false,
     val pingMethod: PingMethod = PingMethod.Url,
-    val widgets: List<HomeWidget> = listOf(HomeWidget.Server, HomeWidget.Subscription),
+    val widgets: List<HomeWidget> = listOf(HomeWidget.Subscription, HomeWidget.Divider, HomeWidget.Server),
+    val widgetsVersion: Int = 0,
     val autoUpdateHours: Int = 24,
     val connectOnStart: Boolean = false,
     val notifEnabled: Boolean = true,
@@ -152,6 +156,9 @@ data class AppSettings(
     val desktopTun: Boolean = true,
     val closeToTray: Boolean = true,
     val customTitleBar: Boolean = true,
+
+    val automation: Boolean = false,
+    val automationKey: String = "",
 )
 
 data class ProxyNode(val name: String, val type: String)

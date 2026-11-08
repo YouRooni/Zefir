@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
@@ -46,7 +47,7 @@ object SettingSpots {
     val PingMethod = SettingSpot(Res.string.ping_method, Route.Subscriptions, Icons.Rounded.Speed, subs, Res.string.ping_url_desc)
 
     fun all(platform: Platform, hasRegion: Boolean): List<SettingSpot> = buildList {
-        add(page(Res.string.hub_routing, Route.Basic, Icons.Rounded.AltRoute, "маршрутизация режим исключения"))
+        add(page(Res.string.hub_routing, Route.Basic, Icons.AutoMirrored.Rounded.AltRoute, "маршрутизация режим исключения"))
         add(page(Res.string.hub_power, Route.Power, Icons.Rounded.PowerSettingsNew, "автозапуск автоматически"))
         add(page(Res.string.hub_subs, Route.Subscriptions, Icons.Rounded.Dns, "подписка обновление"))
         if (platform.hasPerAppRouting) add(page(Res.string.tile_apps, Route.Apps, Icons.Rounded.Apps, "банк сбер тинькофф госуслуги озон wildberries вайлдберриз раздельное split туннелирование bank"))
@@ -56,10 +57,10 @@ object SettingSpots {
         if (platform.hasNotificationSettings) add(page(Res.string.notif_title, Route.Notifications, Icons.Rounded.Notifications))
         add(page(Res.string.hub_tools, Route.ToolsSettings, Icons.Rounded.Handyman))
         add(page(Res.string.set_advanced, Route.Advanced, Icons.Rounded.Build))
-        add(page(Res.string.help_title, Route.Help, Icons.Rounded.HelpOutline))
+        add(page(Res.string.help_title, Route.Help, Icons.AutoMirrored.Rounded.HelpOutline))
         add(page(Res.string.set_about, Route.About, Icons.Rounded.Info))
 
-        add(SettingSpot(Res.string.mode_title, Route.Basic, Icons.Rounded.AltRoute, routing, keywords = "умный весь трафик все через глобальный smart global"))
+        add(SettingSpot(Res.string.mode_title, Route.Basic, Icons.AutoMirrored.Rounded.AltRoute, routing, keywords = "умный весь трафик все через глобальный smart global"))
         add(SettingSpot(Res.string.bypass_local, Route.Basic, Icons.Rounded.Lan, routing, Res.string.bypass_local_desc, keywords = "localhost локалхост лан домашняя сеть"))
         if (hasRegion) add(SettingSpot(Res.string.region_direct, Route.Basic, Icons.Rounded.Flag, routing, Res.string.region_direct_desc, keywords = "российские русские сайты напрямую"))
         add(SettingSpot(Res.string.region, Route.Basic, Icons.Rounded.Public, routing, Res.string.region_desc))
@@ -77,9 +78,13 @@ object SettingSpots {
         add(SettingSpot(Res.string.auto_update, Route.Subscriptions, Icons.Rounded.Update, subs, Res.string.auto_update_desc))
         add(SettingSpot(Res.string.reminders, Route.Subscriptions, Icons.Rounded.NotificationsActive, subs, Res.string.reminders_desc))
         add(PingMethod)
-        add(SettingSpot(Res.string.device_hwid, Route.Subscriptions, Icons.Rounded.Fingerprint, subs, Res.string.device_desc, keywords = "hwid устройство лимит"))
-        add(SettingSpot(Res.string.device_model, Route.Subscriptions, Icons.Rounded.Smartphone, subs, Res.string.device_desc))
-        add(SettingSpot(Res.string.device_os, Route.Subscriptions, if (platform.isDesktop) Icons.Rounded.DesktopWindows else Icons.Rounded.Android, subs, Res.string.device_desc))
+        if (PLAY_BUILD) {
+            add(SettingSpot(Res.string.device_send, Route.Subscriptions, Icons.Rounded.Security, subs, Res.string.device_send_desc, keywords = "hwid устройство лимит"))
+        } else {
+            add(SettingSpot(Res.string.device_hwid, Route.Subscriptions, Icons.Rounded.Fingerprint, subs, Res.string.device_desc, keywords = "hwid устройство лимит"))
+            add(SettingSpot(Res.string.device_model, Route.Subscriptions, Icons.Rounded.Smartphone, subs, Res.string.device_desc))
+            add(SettingSpot(Res.string.device_os, Route.Subscriptions, if (platform.isDesktop) Icons.Rounded.DesktopWindows else Icons.Rounded.Android, subs, Res.string.device_desc))
+        }
 
         add(SettingSpot(Res.string.theme, Route.AppSettingsScreen, Icons.Rounded.DarkMode, look, keywords = "тёмная темная светлая ночная dark light"))
         if (platform.systemColorsAvailable) add(SettingSpot(Res.string.dynamic_color, Route.AppSettingsScreen, Icons.Rounded.ColorLens, look, Res.string.dynamic_color_desc))
@@ -97,9 +102,9 @@ object SettingSpots {
 
         add(page(Res.string.speed_title, Route.SpeedTest, Icons.Rounded.Speed, "скорость спидтест speedtest интернет мегабит пинг"))
         add(SettingSpot(Res.string.diag_title, Route.ToolsSettings, Icons.Rounded.MedicalServices, tools, Res.string.diag_desc, keywords = "медленно тормозит лагает не работает не открывается не грузит сломалось ошибка почему slow error"))
-        add(SettingSpot(Res.string.logs, Route.ToolsSettings, Icons.Rounded.Article, tools, Res.string.logs_desc, keywords = "лог журнал"))
+        add(SettingSpot(Res.string.logs, Route.ToolsSettings, Icons.AutoMirrored.Rounded.Article, tools, Res.string.logs_desc, keywords = "лог журнал"))
         add(SettingSpot(Res.string.conn_title, Route.ToolsSettings, Icons.Rounded.Hub, tools, Res.string.conn_desc))
-        add(page(Res.string.site_title, Route.SiteCheck(), Icons.Rounded.AltRoute, "почему мимо напрямую через vpn сайт правило не работает открывается маршрут"))
+        add(page(Res.string.site_title, Route.SiteCheck(), Icons.AutoMirrored.Rounded.AltRoute, "почему мимо напрямую через vpn сайт правило не работает открывается маршрут"))
         add(page(Res.string.dns_title, Route.DnsLog, Icons.Rounded.Dns, "днс dns запросы домены резолв"))
         add(SettingSpot(Res.string.backup_export, Route.ToolsSettings, Icons.Rounded.Upload, tools, Res.string.backup_export_desc, keywords = "бэкап резервная копия"))
         add(SettingSpot(Res.string.backup_import, Route.ToolsSettings, Icons.Rounded.Download, tools, Res.string.backup_import_desc, keywords = "бэкап восстановить"))
@@ -112,14 +117,15 @@ object SettingSpots {
         add(SettingSpot(Res.string.mtu, Route.Advanced, Icons.Rounded.Straighten, expert, Res.string.mtu_desc))
         add(SettingSpot(Res.string.stack, Route.Advanced, Icons.Rounded.Layers, expert, Res.string.stack_desc))
         add(SettingSpot(Res.string.sniffer, Route.Advanced, Icons.Rounded.TravelExplore, expert, Res.string.sniffer_desc))
-        add(SettingSpot(Res.string.tcp_concurrent, Route.Advanced, Icons.Rounded.CallSplit, expert, Res.string.tcp_concurrent_desc))
+        add(SettingSpot(Res.string.tcp_concurrent, Route.Advanced, Icons.AutoMirrored.Rounded.CallSplit, expert, Res.string.tcp_concurrent_desc))
         add(SettingSpot(Res.string.tfo, Route.Advanced, Icons.Rounded.FastForward, expert, Res.string.tfo_desc, keywords = "tfo fast open"))
         add(SettingSpot(Res.string.unified_delay, Route.Advanced, Icons.Rounded.Timer, expert, Res.string.unified_delay_desc))
         add(SettingSpot(Res.string.test_url, Route.Advanced, Icons.Rounded.Link, expert, Res.string.test_url_desc))
         add(SettingSpot(Res.string.detailed_errors, Route.Advanced, Icons.Rounded.BugReport, expert, Res.string.detailed_errors_desc))
+        if (platform.hasAutomation) add(SettingSpot(Res.string.automation, Route.Automation, Icons.Rounded.SmartToy, expert + Res.string.automation, Res.string.automation_desc, keywords = "tasker macrodroid automate adb плагин ключ api"))
         add(SettingSpot(Res.string.log_level, Route.Advanced, Icons.Rounded.FilterList, expert))
         add(SettingSpot(Res.string.show_advanced, Route.Advanced, Icons.Rounded.Code, expert, Res.string.show_advanced_desc, keywords = "конфиг yaml правила вручную"))
-        add(SettingSpot(Res.string.allow_bypass, Route.Advanced, Icons.Rounded.AltRoute, expert, Res.string.allow_bypass_desc))
+        add(SettingSpot(Res.string.allow_bypass, Route.Advanced, Icons.AutoMirrored.Rounded.AltRoute, expert, Res.string.allow_bypass_desc))
         add(SettingSpot(Res.string.skip_cert, Route.Advanced, Icons.Rounded.GppMaybe, expert, Res.string.skip_cert_desc))
     }
 }
