@@ -107,6 +107,8 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
 
     private val _connectedAt = MutableStateFlow<Long?>(null)
     val connectedAt: StateFlow<Long?> = _connectedAt
+    @Volatile
+    private var trafficBaseline: Traffic? = null
     val detectedCountry: String by lazy { platform.detectCountry() }
     val activeProfile: Profile? get() = _profiles.value.firstOrNull { it.id == _settings.value.activeProfile }
     val region: RegionPack? get() = _settings.value.effectiveRegion(detectedCountry)
@@ -170,8 +172,16 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
         scope.launch {
             tunnel.collect { state ->
                 when (state) {
-                    TunnelState.On -> if (_connectedAt.value == null) _connectedAt.value = nowMillis()
-                    TunnelState.Off, is TunnelState.Failed -> _connectedAt.value = null
+                    TunnelState.On -> if (_connectedAt.value == null) {
+                        _connectedAt.value = nowMillis()
+                        trafficBaseline = runCatching { core.totalTraffic() }.getOrNull()
+                        _total.value = Traffic()
+                    }
+                    TunnelState.Off, is TunnelState.Failed -> {
+                        _connectedAt.value = null
+                        trafficBaseline = null
+                        _total.value = Traffic()
+                    }
                     else -> Unit
                 }
             }
@@ -267,7 +277,19 @@ class AppController(val platform: Platform, private val scope: CoroutineScope) {
                 runCatching {
                     val speed = core.speed()
                     _speed.value = speed
-                    _total.value = core.totalTraffic()
+                    val raw = core.totalTraffic()
+                    val base = trafficBaseline
+                    _total.value = when {
+                        base == null -> {
+                            trafficBaseline = raw
+                            Traffic()
+                        }
+                        raw.up < base.up || raw.down < base.down -> {
+                            trafficBaseline = Traffic()
+                            raw
+                        }
+                        else -> Traffic(up = raw.up - base.up, down = raw.down - base.down)
+                    }
 
                     if (_settings.value.notifLiveSpeed && _settings.value.notifEnabled) platform.engine.updateNotification(speed)
                 }
