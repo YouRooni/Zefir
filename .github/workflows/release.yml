@@ -58,6 +58,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
       - name: Install Android NDK
         run: |
           source scripts/core.env
@@ -96,6 +97,7 @@ jobs:
         with:
           name: native-core
           path: core/prebuilt
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
       - name: Install Android SDK
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
       - name: Prepare signing key
@@ -152,6 +154,7 @@ jobs:
         with:
           name: native-core
           path: core/prebuilt
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
       - name: Install Android SDK for shared module
         shell: bash
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
@@ -193,6 +196,7 @@ jobs:
         with:
           name: native-core
           path: core/prebuilt
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407
       - name: Install Android SDK for shared module
         run: sdkmanager "platforms;android-37.0" "build-tools;37.0.0"
       - name: Package
