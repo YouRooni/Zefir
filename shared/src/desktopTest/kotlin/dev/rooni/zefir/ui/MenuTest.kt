@@ -17,7 +17,12 @@ import kotlin.test.assertEquals
 
 @OptIn(ExperimentalTestApi::class)
 class MenuTest {
-    private val platform = Proxy.newProxyInstance(Platform::class.java.classLoader, arrayOf(Platform::class.java)) { _, _, _ -> null } as Platform
+    private val platform = Proxy.newProxyInstance(Platform::class.java.classLoader, arrayOf(Platform::class.java)) { _, method, _ ->
+        when (method.returnType) {
+            Boolean::class.javaPrimitiveType -> false
+            else -> null
+        }
+    } as Platform
 
     @Test
     fun tapOpensInsideClickableCardAndCardStaysQuiet() = runComposeUiTest {

@@ -178,7 +178,7 @@ private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
 @Composable
 fun ConnectionWhySheet(controller: AppController, host: String, exit: String, rule: String, payload: String, onClose: () -> Unit) {
-    ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = null) {
+    ModalBottomSheet(modifier = Modifier.focusRing(), onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surfaceContainerLow, dragHandle = null) {
         SheetHandle()
         Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp).navigationBarsPadding()) {
             RouteVerdict(controller, host, exit, rule, payload, controller.ruleSource(rule, payload), null)

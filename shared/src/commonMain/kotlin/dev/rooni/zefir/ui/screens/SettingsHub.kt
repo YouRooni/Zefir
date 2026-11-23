@@ -76,6 +76,8 @@ fun SettingsHubScreen(controller: AppController, nav: Navigator) {
         }
     }
     Box(Modifier.fillMaxSize()) {
+    // пока открыт поиск, хаб под ним для пульта закрыт
+    FocusLayer(!searching, Modifier.fillMaxSize()) {
     SubScreen(
         stringResource(Res.string.tab_settings),
         null,
@@ -111,6 +113,7 @@ fun SettingsHubScreen(controller: AppController, nav: Navigator) {
             )
         }
     }
+    }
     AnimatedVisibility(
         searchShown,
         modifier = Modifier.graphicsLayer {
@@ -124,7 +127,7 @@ fun SettingsHubScreen(controller: AppController, nav: Navigator) {
         enter = fadeIn(tween(200, 60)),
         exit = fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 0.94f),
     ) {
-        SettingsSearch(controller, nav) { searching = false }
+        FocusLayer(searching, Modifier.fillMaxSize()) { SettingsSearch(controller, nav) { searching = false } }
     }
     }
 }

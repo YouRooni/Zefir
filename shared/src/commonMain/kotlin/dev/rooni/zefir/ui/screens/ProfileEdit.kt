@@ -288,7 +288,7 @@ fun EditProfileScreen(controller: AppController, id: String, onBack: () -> Unit)
     }
 
     if (showQr) {
-        ModalBottomSheet(onDismissRequest = { showQr = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
+        ModalBottomSheet(modifier = Modifier.focusRing(), onDismissRequest = { showQr = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
             SheetHandle()
             Column(
                 Modifier.fillMaxWidth().padding(24.dp).navigationBarsPadding(),

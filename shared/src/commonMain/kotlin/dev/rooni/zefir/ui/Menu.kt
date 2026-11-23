@@ -31,6 +31,7 @@ import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.backhandler.PredictiveBackHandler
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -74,7 +75,7 @@ private var claimedDown: Triple<androidx.compose.ui.input.pointer.PointerId, Lon
 private val MenuEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
 @Composable
-private fun MenuItem(entry: MenuEntry, shape: Shape, hovered: Boolean, finger: () -> Offset?, onPlaced: (Rect) -> Unit, onClick: () -> Unit) {
+private fun MenuItem(entry: MenuEntry, shape: Shape, hovered: Boolean, finger: () -> Offset?, onPlaced: (Rect) -> Unit, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     val content = if (entry.checked) scheme.onSecondaryContainer else scheme.onSurface
     val iconTint = if (entry.checked) scheme.onSecondaryContainer else scheme.onSurfaceVariant
@@ -94,7 +95,7 @@ private fun MenuItem(entry: MenuEntry, shape: Shape, hovered: Boolean, finger: (
         }
     }
     Row(
-        Modifier
+        modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .onGloballyPositioned { coordinates ->
@@ -146,6 +147,15 @@ fun AppMenu(open: Boolean, onDismiss: () -> Unit, entries: List<MenuEntry>, hove
     val position = remember(margin) { MenuPosition(margin) { origin = it } }
     val scope = rememberCoroutineScope()
     val back = remember { Animatable(0f) }
+    // с пульта меню должно забрать фокус, иначе до пунктов стрелками не дойти
+    val keys = keyNavActive()
+    val first = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(open, keys) {
+        if (open && keys) {
+            kotlinx.coroutines.delay(32)
+            runCatching { first.requestFocus() }
+        }
+    }
 
     PredictiveBackHandler(enabled = open) { events ->
         try {
@@ -162,7 +172,7 @@ fun AppMenu(open: Boolean, onDismiss: () -> Unit, entries: List<MenuEntry>, hove
             Box(Modifier.fillMaxSize().clickable(remember { MutableInteractionSource() }, null, onClick = onDismiss))
         }
     }
-    Popup(popupPositionProvider = position, onDismissRequest = onDismiss, properties = PopupProperties(focusable = false, dismissOnClickOutside = false)) {
+    Popup(popupPositionProvider = position, onDismissRequest = onDismiss, properties = PopupProperties(focusable = keys && open, dismissOnClickOutside = false)) {
         val transition = rememberTransition(visible, "menu")
         val shown by transition.animateFloat({ tween(if (targetState) 220 else 130, easing = MenuEasing) }, label = "menuShown") { if (it) 1f else 0f }
 
@@ -178,7 +188,7 @@ fun AppMenu(open: Boolean, onDismiss: () -> Unit, entries: List<MenuEntry>, hove
             if (open.isNotEmpty()) add(open)
         }
         Column(
-            Modifier.padding(8.dp).widthIn(min = 180.dp, max = 320.dp).width(IntrinsicSize.Max).graphicsLayer {
+            Modifier.focusRing().padding(8.dp).widthIn(min = 180.dp, max = 320.dp).width(IntrinsicSize.Max).graphicsLayer {
                 alpha = (shown * 2f).coerceAtMost(1f)
                 scaleX = (0.85f + 0.15f * shown) * (1f - 0.12f * back.value)
                 scaleY = (0.85f + 0.15f * shown) * (1f - 0.12f * back.value)
@@ -187,6 +197,8 @@ fun AppMenu(open: Boolean, onDismiss: () -> Unit, entries: List<MenuEntry>, hove
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             val lastSection = sections.lastIndex + if (extra != null) 1 else 0
+            // с пульта встаём сразу на выбранный пункт, если он есть
+            val focusIndex = shownEntries.indexOfFirst { it.checked }.coerceAtLeast(0)
             sections.forEachIndexed { sectionIndex, section ->
                 val outerTop = if (sectionIndex == 0) 24.dp else 10.dp
                 val outerBottom = if (sectionIndex == lastSection) 24.dp else 10.dp
@@ -203,7 +215,7 @@ fun AppMenu(open: Boolean, onDismiss: () -> Unit, entries: List<MenuEntry>, hove
                         section.forEachIndexed { place, (index, entry) ->
                             val top = if (place == 0) outerTop - 4.dp else 6.dp
                             val bottom = if (place == section.lastIndex) outerBottom - 4.dp else 6.dp
-                            MenuItem(entry, RoundedCornerShape(top, top, bottom, bottom), hovered == index, finger, { onPlaced(index, it) }) {
+                            MenuItem(entry, RoundedCornerShape(top, top, bottom, bottom), hovered == index, finger, { onPlaced(index, it) }, if (index == focusIndex) Modifier.focusRequester(first) else Modifier) {
                                 platform.haptic(Haptic.Tick)
                                 onDismiss()
                                 entry.onClick()

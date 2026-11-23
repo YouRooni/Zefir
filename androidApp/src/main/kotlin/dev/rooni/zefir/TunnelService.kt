@@ -76,12 +76,21 @@ class TunnelService : VpnService() {
         try {
             val fd = Builder().apply {
                 addAddress(IPV4_ADDRESS, 30)
-                addRoute("0.0.0.0", 0)
+                // Локалку в туннель не пускаем: иначе Android Auto и всё в LAN уходит
+                // через защищённый сокет в мобильную сеть и до машины не доходит
+                if (options.bypassLocal) LocalRoutes.v4.forEach { (ip, len) -> addRoute(ip, len) }
+                else addRoute("0.0.0.0", 0)
                 addDnsServer(DNS)
                 if (options.ipv6) {
                     runCatching {
                         addAddress(IPV6_ADDRESS, 126)
-                        addRoute("::", 0)
+                        if (options.bypassLocal) {
+                            LocalRoutes.v6.forEach { (ip, len) -> addRoute(ip, len) }
+                            // наш адрес и DNS лежат в fc00::/7, возвращаем их в туннель
+                            addRoute(IPV6_NET, 126)
+                        } else {
+                            addRoute("::", 0)
+                        }
                         addDnsServer(DNS6)
                     }
                 }
@@ -305,6 +314,7 @@ class TunnelService : VpnService() {
         private const val NOTIFICATION_ID = 7
         private const val IPV4_ADDRESS = "198.18.0.1"
         private const val IPV6_ADDRESS = "fdfe:dcba:9876::1"
+        private const val IPV6_NET = "fdfe:dcba:9876::"
         private const val DNS = "198.18.0.2"
         private const val DNS6 = "fdfe:dcba:9876::2"
     }

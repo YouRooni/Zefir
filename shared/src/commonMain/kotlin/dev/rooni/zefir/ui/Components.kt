@@ -26,6 +26,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.semantics.disabled
@@ -568,6 +569,8 @@ fun AppTextField(
             textStyle = textStyle,
             shape = shape,
             interactionSource = source,
+            // на телеке стрелки проходят через поле, клавиатура открывается только по OK, а не от простого фокуса
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(showKeyboardOnFocus = !LocalPlatform.current.isTv),
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = fill,
                 unfocusedContainerColor = fill,
@@ -686,6 +689,7 @@ fun AppSheet(
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
+        modifier = Modifier.focusRing(),
         sheetState = sheetState,
         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
@@ -767,11 +771,12 @@ val LocalDialogHost = staticCompositionLocalOf { DialogHost() }
 
 @Composable
 fun DialogLayer(host: DialogHost) {
-    host.entries.toList().forEach { entry -> key(entry) { DialogFrame(entry) { host.entries -= entry } } }
+    val top = host.entries.lastOrNull { it.visible }
+    host.entries.toList().forEach { entry -> key(entry) { DialogFrame(entry, entry === top) { host.entries -= entry } } }
 }
 
 @Composable
-private fun DialogFrame(entry: DialogEntry, onGone: () -> Unit) {
+private fun DialogFrame(entry: DialogEntry, top: Boolean, onGone: () -> Unit) {
     val scope = rememberCoroutineScope()
     val state = remember { MutableTransitionState(false) }
     state.targetState = entry.visible
@@ -791,6 +796,8 @@ private fun DialogFrame(entry: DialogEntry, onGone: () -> Unit) {
     val noRipple = remember { MutableInteractionSource() }
     Box(
         Modifier.fillMaxSize().graphicsLayer { alpha = shown * (1f - 0.5f * back.value) }.background(Color.Black.copy(alpha = 0.42f))
+            // фон закрывает диалог тапом, но стрелками на него вставать не надо
+            .focusProperties { canFocus = false }
             .clickable(noRipple, null, onClick = { if (entry.visible) entry.onDismiss() }),
     )
     Box(Modifier.fillMaxSize().systemBarsPadding().padding(24.dp), contentAlignment = Alignment.Center) {
@@ -802,8 +809,11 @@ private fun DialogFrame(entry: DialogEntry, onGone: () -> Unit) {
                 val scale = (0.9f + 0.1f * shown) * (1f - 0.1f * back.value)
                 scaleX = scale
                 scaleY = scale
-            }.clickable(noRipple, null) {},
-        ) { entry.content() }
+            }.focusProperties { canFocus = false }.clickable(noRipple, null) {},
+        ) {
+            // диалог сам забирает фокус с пульта, экран под ним для стрелок закрыт
+            FocusLayer(entry.visible && top) { entry.content() }
+        }
     }
 }
 

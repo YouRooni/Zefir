@@ -202,8 +202,9 @@ fun App(controller: AppController) {
               androidx.compose.material3.LocalRippleConfiguration.current
           }
           CompositionLocalProvider(androidx.compose.material3.LocalRippleConfiguration provides tvRipple) {
-            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).onSizeChanged { size = it }) {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).onSizeChanged { size = it }.focusRing()) {
                 if (!settings.onboarded || reveal != null) {
+                    FocusLayer(!settings.onboarded && reveal == null && dialogs.entries.none { it.visible }) {
                     OnboardingScreen(controller) { origin ->
                         reveal = origin
                         controller.update({ it.copy(onboarded = true) })
@@ -218,8 +219,10 @@ fun App(controller: AppController) {
                             reveal = null
                         }
                     }
+                    }
                 }
                 if (settings.onboarded) {
+                    FocusLayer(dialogs.entries.none { it.visible } && reveal == null) {
                     Box(
                         Modifier.fillMaxSize().graphicsLayer {
                             val center = reveal
@@ -233,6 +236,7 @@ fun App(controller: AppController) {
                         }.background(MaterialTheme.colorScheme.surface),
                     ) {
                         MainFlow(controller)
+                    }
                     }
                 }
                 DialogLayer(dialogs)
@@ -368,7 +372,10 @@ private fun RouteHost(nav: Navigator, content: @Composable (Route) -> Unit) {
                                 }
                             },
                         ),
-                    ) { content(route) }
+                    ) {
+                        // с пульта фокус живёт только на верхнем экране, нижние и уезжающие для стрелок закрыты
+                        FocusLayer(isTop && !isLeaving, Modifier.fillMaxSize()) { content(route) }
+                    }
                 }
                 if (isLeaving) {
                     Box(
@@ -563,12 +570,15 @@ private fun TabsScreen(controller: AppController, nav: Navigator) {
                     val tab = Tab.entries[page]
                     holder.SaveableStateProvider(tab.name) {
                         CompositionLocalProvider(LocalCaptionActive provides (nav.tab == tab && nav.stack.size == 1)) {
+                        // соседние вкладки собраны заранее, но стрелки в них не пускаем, переключение только через навигацию
+                        FocusLayer(nav.tab == tab, Modifier.fillMaxSize()) {
                         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                             when (tab) {
                                 Tab.Home -> HomeScreen(controller, nav, split)
                                 Tab.Servers -> ServersScreen(controller, nav)
                                 Tab.Settings -> SettingsHubScreen(controller, nav)
                             }
+                        }
                         }
                         }
                     }

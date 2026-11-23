@@ -355,7 +355,9 @@ fun ServersScreen(controller: AppController, nav: Navigator) {
             ) { padding ->
                 CompositionLocalProvider(LocalServerNav provides nav) {
                     HorizontalPager(pager, Modifier.padding(padding).fillMaxSize().tabsHandoff(), beyondViewportPageCount = 1) { page ->
-                        if (page == 0) ServerList(controller, nav, listState, gridState, folderPath, folderTop) { folderPath = it } else ProfilesPage(controller, nav)
+                        FocusLayer(page == pager.currentPage, Modifier.fillMaxSize()) {
+                            if (page == 0) ServerList(controller, nav, listState, gridState, folderPath, folderTop) { folderPath = it } else ProfilesPage(controller, nav)
+                        }
                     }
                 }
             }
@@ -920,7 +922,7 @@ private fun ServerMenu(controller: AppController, member: String, title: String,
         )
     }
     if (showQr && current != null) {
-        ModalBottomSheet(onDismissRequest = { showQr = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
+        ModalBottomSheet(modifier = Modifier.focusRing(), onDismissRequest = { showQr = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
             SheetHandle()
             Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(title, style = MaterialTheme.typography.titleLargeEmphasized, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -949,7 +951,7 @@ private fun ChainSheet(controller: AppController, member: String, title: String,
                     !chainCreatesLoop(member, name, chains - member)
             }
     }
-    ModalBottomSheet(onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
+    ModalBottomSheet(modifier = Modifier.focusRing(), onDismissRequest = onClose, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
         SheetHandle()
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Text(stringResource(Res.string.chain_title), style = MaterialTheme.typography.titleLargeEmphasized, modifier = Modifier.padding(horizontal = 8.dp))
@@ -1036,7 +1038,14 @@ private fun TagMarks(parsed: ServerName) {
 }
 
 private fun Modifier.memberGesture(controller: AppController, member: String, menu: MenuState, hasMenu: Boolean, onChoose: (String) -> Unit): Modifier =
-    if (hasMenu) menuGesture(menu, controller.platform, SERVER_HOLD_MILLIS).clickable { onChoose(member) } else clickable { onChoose(member) }
+    if (hasMenu) {
+        // на телеке пальца нет: меню открывается долгим нажатием OK на пульте
+        menuGesture(menu, controller.platform, SERVER_HOLD_MILLIS).combinedClickable(
+            onLongClick = if (controller.platform.isTv) ({ menu.show() }) else null,
+        ) { onChoose(member) }
+    } else {
+        clickable { onChoose(member) }
+    }
 
 @Composable
 private fun MemberTile(
@@ -1743,13 +1752,16 @@ fun AddSubscriptionScreen(controller: AppController, onDone: () -> Unit, onManua
                                         }
                                     },
                                     modifier = Modifier.fillMaxWidth().height(64.dp),
-                                    shape = RoundedCornerShape(28.dp, 28.dp, 6.dp, 6.dp),
+                                    shape = RoundedCornerShape(28.dp, 28.dp, if (keyboard) 28.dp else 6.dp, if (keyboard) 28.dp else 6.dp),
                                 ) {
                                     Icon(if (filled) Icons.Rounded.Add else Icons.Rounded.ContentPaste, null)
                                     Spacer(Modifier.width(10.dp))
                                     ButtonText(stringResource(if (filled) Res.string.add_action else Res.string.add_paste), style = buttonText)
                                 }
                             }
+                            // при открытой клавиатуре (особенно на телеке) места мало, оставляем только поле и главную кнопку
+                            AnimatedVisibility(!keyboard, enter = RevealEnter, exit = RevealExit) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                 OutlinedButton(
                                     onClick = {
@@ -1789,6 +1801,8 @@ fun AddSubscriptionScreen(controller: AppController, onDone: () -> Unit, onManua
                                 Icon(Icons.Rounded.EditNote, null, Modifier.size(20.dp))
                                 Spacer(Modifier.width(8.dp))
                                 ButtonText(stringResource(Res.string.manual_open))
+                            }
+                            }
                             }
                         }
                     }

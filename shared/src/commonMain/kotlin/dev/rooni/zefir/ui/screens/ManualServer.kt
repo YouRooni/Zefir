@@ -112,7 +112,7 @@ private fun ProtocolPicker(type: ManualType, onPick: (ManualType) -> Unit) {
         }
     }
     if (open) {
-        ModalBottomSheet(onDismissRequest = { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
+        ModalBottomSheet(modifier = Modifier.focusRing(), onDismissRequest = { open = false }, containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, dragHandle = null) {
             SheetHandle()
             LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
                 ProtocolSections.forEach { (title, options) ->

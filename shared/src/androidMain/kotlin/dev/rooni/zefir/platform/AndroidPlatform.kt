@@ -346,7 +346,14 @@ class AndroidPlatform(
     override suspend fun pickFile(): String? {
         val deferred = CompletableDeferred<String?>()
         pendingFile = deferred
-        withContext(Dispatchers.Main) { fileLauncher?.launch(arrayOf("*/*")) ?: deferred.complete(null) }
+        withContext(Dispatchers.Main) {
+            // на многих телеках нет системного выбора файлов, тогда просто ничего не открываем, а не падаем
+            val launcher = fileLauncher
+            if (launcher == null || runCatching { launcher.launch(arrayOf("*/*")) }.isFailure) {
+                pendingFile = null
+                deferred.complete(null)
+            }
+        }
         return deferred.await()
     }
 
@@ -381,7 +388,10 @@ class AndroidPlatform(
         }
     }
 
-    override val canScanQr = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
+    // на телеке сканер QR бессмысленен: некоторые приставки заявляют камеру, а сканер открывается чёрным экраном
+    override val canScanQr = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) &&
+        !context.packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) &&
+        context.getSystemService(android.app.UiModeManager::class.java)?.currentModeType != android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
 
     private fun hasGms() = runCatching {
         com.google.android.gms.common.GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(context) == com.google.android.gms.common.ConnectionResult.SUCCESS
